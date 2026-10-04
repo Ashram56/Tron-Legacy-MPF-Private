@@ -135,12 +135,15 @@ function Find-Git {
 $AssetsUrl = if ($env:TRON_ASSETS_REPO) { $env:TRON_ASSETS_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git' }
 
 function Test-RepoAccess([string]$GitExe, [string]$Url, [switch]$Anonymous) {
+    # no prompt of any kind: GIT_TERMINAL_PROMPT for git's own, GCM_INTERACTIVE for Git Credential Manager's
+    # login window (it asks for a user and password, which GitHub then refuses for git)
     $env:GIT_TERMINAL_PROMPT = '0'
+    $env:GCM_INTERACTIVE = 'never'
     try {
         if ($Anonymous) { & $GitExe -c credential.helper= ls-remote $Url HEAD *> $null }
         else { & $GitExe ls-remote $Url HEAD *> $null }
         return ($LASTEXITCODE -eq 0)
-    } finally { Remove-Item Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue }
+    } finally { Remove-Item Env:GIT_TERMINAL_PROMPT, Env:GCM_INTERACTIVE -ErrorAction SilentlyContinue }
 }
 
 function Invoke-GitHubAuth([string]$GitExe) {
