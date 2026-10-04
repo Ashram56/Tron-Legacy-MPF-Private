@@ -60,6 +60,55 @@ run() {
     if [ "$DRY" = 0 ]; then "$@"; fi
 }
 
+# ------------------------------------------------------------------ GitHub access (private repositories)
+# The game repository or its assets submodule may be private: git then needs a GitHub token instead of a
+# password. Give it as TRON_GITHUB_TOKEN (or GITHUB_TOKEN / GH_TOKEN), or paste it when asked. It is used for
+# this run only (git's url.insteadOf in the environment, inherited by setup.py), and handed to git's
+# credential helper, if one is set up (the macOS keychain, for example), so later `git pull`s work too.
+ASSETS_URL="${TRON_ASSETS_REPO:-https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git}"
+TOKEN="${TRON_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+
+public_repo() { GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true git -c credential.helper= ls-remote "$1" HEAD >/dev/null 2>&1; }
+
+github_auth() {
+    AUTH_DONE=1
+    say "GitHub access"
+    if [ "$DRY" = 1 ]; then
+        note "(dry run) a private repository asks for a GitHub token here$([ -n "$TOKEN" ] && echo ': using the one given')"
+        return
+    fi
+    if [ -z "$TOKEN" ]; then
+        if public_repo "$REPO_URL" && public_repo "$ASSETS_URL"; then
+            note "the repositories are public: no token needed"
+            return
+        fi
+        if GIT_TERMINAL_PROMPT=0 git ls-remote "$ASSETS_URL" HEAD >/dev/null 2>&1 \
+                && GIT_TERMINAL_PROMPT=0 git ls-remote "$REPO_URL" HEAD >/dev/null 2>&1; then
+            note "a private repository, readable with the GitHub credentials git already has"
+            return
+        fi
+        [ "$YES" = 0 ] && [ -r /dev/tty ] || die "a repository is private: set TRON_GITHUB_TOKEN to a GitHub token that can read it"
+        note "A repository is private. Paste a GitHub token that can read it (github.com > Settings > Developer"
+        note "settings > Personal access tokens; a fine-grained token with Contents: read-only on both repositories)."
+        printf '    token (not shown): ' >/dev/tty
+        IFS= read -rs TOKEN </dev/tty
+        printf '\n' >/dev/tty
+        [ -n "$TOKEN" ] || die "no token given"
+    fi
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.https://x-access-token:${TOKEN}@github.com/.insteadOf" \
+        GIT_CONFIG_VALUE_0="https://github.com/"
+    GIT_TERMINAL_PROMPT=0 git ls-remote "$ASSETS_URL" HEAD >/dev/null 2>&1 \
+        || die "the GitHub token cannot read $ASSETS_URL (check its repository access and expiry)"
+    printf 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=%s\n\n' "$TOKEN" \
+        | git credential approve 2>/dev/null || true
+    note "token accepted"
+}
+
+# first thing, so a token is asked before the long installs (later, once git is installed, if it is missing)
+AUTH_DONE=0
+if command -v git >/dev/null 2>&1; then github_auth; fi
+
+
 if [ "$(id -u)" = 0 ]; then
     SUDO=()
 else
@@ -294,6 +343,8 @@ if [ -z "$PY" ]; then
     fi
     note "Python: $PY"
 fi
+
+[ "$AUTH_DONE" = 1 ] || github_auth    # git was missing at the start
 
 # ------------------------------------------------------------------ repository (run on its own: clone it)
 

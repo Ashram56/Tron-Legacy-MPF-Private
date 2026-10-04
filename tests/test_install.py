@@ -149,6 +149,35 @@ class TestShellScripts(unittest.TestCase):
                 self.assertIn("'feature' is no longer on GitHub", r.stdout)
                 self.assertIn("git -C {} checkout -B main --track origin/main".format(target), r.stdout)
 
+    def test_github_auth(self):
+        """The token step (run first, so a private repository asks for a token before the long installs): public
+        repositories need none; a token that cannot read the assets stops the install with a clear message, and
+        is never printed."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        repo = os.path.join(tmp, "repo")
+        subprocess.run(["git", "-c", "init.defaultBranch=main", "init", "-q", repo], check=True)
+        subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "--allow-empty", "-m", "one"], check=True)
+        for name in ("install_prereqs_linux.sh", "install_prereqs_macos.sh"):
+            script = open(os.path.join(INSTALL, name), encoding="utf-8").read()
+            funcs = script[script.index("say() {"):script.index("AUTH_DONE=0")]
+            for env, code, out in (({"TRON_REPO": repo, "TRON_ASSETS_REPO": repo}, 0, "public: no token needed"),
+                                   ({"TRON_REPO": repo, "TRON_ASSETS_REPO": os.path.join(tmp, "missing"),
+                                     "TRON_GITHUB_TOKEN": "secret-token-123"}, 1, "cannot read")):
+                with self.subTest(script=name, env=sorted(env)):
+                    prog = 'DRY=0 YES=1; REPO_URL="$TRON_REPO"\n' + funcs + "github_auth\n"
+                    r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=60,
+                                       env=dict({k: v for k, v in os.environ.items()
+                                                 if k not in ("GITHUB_TOKEN", "GH_TOKEN", "TRON_GITHUB_TOKEN")},
+                                                HOME=tmp, **env))
+                    self.assertEqual(code, r.returncode, r.stdout + r.stderr)
+                    self.assertIn(out, r.stdout + r.stderr)
+                    self.assertNotIn("secret-token-123", r.stdout + r.stderr)
+        r = sh([os.path.join(INSTALL, "install_prereqs_linux.sh"), "--dry-run"],
+               env={"TRON_OS_RELEASE": self.os_release("ID=debian\n"), "DISPLAY": ":0"})
+        self.assertIn("GitHub access", r.stdout)
+
     def test_build_pinproc_plan(self):
         r = sh([os.path.join(INSTALL, "build_pinproc.sh"), "--dry-run", "--python", sys.executable,
                 "--src", tempfile.gettempdir() + "/tron-pinproc-plan"])

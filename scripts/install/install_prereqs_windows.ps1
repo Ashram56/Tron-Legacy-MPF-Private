@@ -128,6 +128,54 @@ function Find-Git {
     return $null
 }
 
+# The game repository or its assets submodule may be private: git then needs a GitHub token instead of a
+# password. Give it as $env:TRON_GITHUB_TOKEN (or GITHUB_TOKEN / GH_TOKEN), or paste it when asked. It is used
+# for this run only (git's url.insteadOf in the environment, inherited by setup.py), and handed to git's
+# credential helper (Git Credential Manager), so later `git pull`s work too.
+$AssetsUrl = if ($env:TRON_ASSETS_REPO) { $env:TRON_ASSETS_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git' }
+
+function Test-RepoAccess([string]$GitExe, [string]$Url, [switch]$Anonymous) {
+    $env:GIT_TERMINAL_PROMPT = '0'
+    try {
+        if ($Anonymous) { & $GitExe -c credential.helper= ls-remote $Url HEAD *> $null }
+        else { & $GitExe ls-remote $Url HEAD *> $null }
+        return ($LASTEXITCODE -eq 0)
+    } finally { Remove-Item Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue }
+}
+
+function Invoke-GitHubAuth([string]$GitExe) {
+    Write-Step 'GitHub access'
+    $token = @($env:TRON_GITHUB_TOKEN, $env:GITHUB_TOKEN, $env:GH_TOKEN) | Where-Object { $_ } | Select-Object -First 1
+    if ($DryRun) {
+        Write-Note '(dry run) a private repository asks for a GitHub token here'
+        return
+    }
+    if (-not $token) {
+        if ((Test-RepoAccess $GitExe $RepoUrl -Anonymous) -and (Test-RepoAccess $GitExe $AssetsUrl -Anonymous)) {
+            Write-Note 'the repositories are public: no token needed'
+            return
+        }
+        if ((Test-RepoAccess $GitExe $RepoUrl) -and (Test-RepoAccess $GitExe $AssetsUrl)) {
+            Write-Note 'a private repository, readable with the GitHub credentials git already has'
+            return
+        }
+        if ($Yes) { throw 'a repository is private: set $env:TRON_GITHUB_TOKEN to a GitHub token that can read it' }
+        Write-Note 'A repository is private. Paste a GitHub token that can read it (github.com > Settings > Developer'
+        Write-Note 'settings > Personal access tokens; a fine-grained token with Contents: read-only on both repositories).'
+        $secure = Read-Host '    token (not shown)' -AsSecureString
+        $token = [System.Net.NetworkCredential]::new('', $secure).Password
+        if (-not $token) { throw 'no token given' }
+    }
+    $env:GIT_CONFIG_COUNT = '1'
+    $env:GIT_CONFIG_KEY_0 = "url.https://x-access-token:$token@github.com/.insteadOf"
+    $env:GIT_CONFIG_VALUE_0 = 'https://github.com/'
+    if (-not (Test-RepoAccess $GitExe $AssetsUrl)) {
+        throw "the GitHub token cannot read $AssetsUrl (check its repository access and expiry)"
+    }
+    "protocol=https`nhost=github.com`nusername=x-access-token`npassword=$token`n" | & $GitExe credential approve 2>$null
+    Write-Note 'token accepted'
+}
+
 function Test-VcRuntime {
     foreach ($key in @("HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\$VcArch",
                        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\$VcArch")) {
@@ -164,6 +212,8 @@ try {
         $env:Path = "$env:ProgramFiles\Git\cmd;$env:Path"
         if (-not $DryRun -and -not (Find-Git)) { throw 'Git is still missing after the install' }
     }
+    $authGit = Find-Git
+    Invoke-GitHubAuth $(if ($authGit) { $authGit } else { 'git' })
 
     # ---------------------------------------------------------------- Python 3.11
     Write-Step 'Python 3.11'

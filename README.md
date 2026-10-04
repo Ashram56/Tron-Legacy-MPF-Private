@@ -36,6 +36,9 @@ You can change where the files go, and what is installed:
   Windows, `~/Tron-Legacy-MPF` elsewhere.
 - **Branch / repository:** `TRON_BRANCH` and `TRON_REPO`, the same way. A folder that already holds a clone is
   updated with `git pull --ff-only` instead.
+- **Private repositories:** if the assets (or the game) repository is private, the installer asks first for a
+  GitHub token that can read it (github.com > Settings > Developer settings > Personal access tokens; a
+  fine-grained token with Contents: read-only), instead of a password. Or set `TRON_GITHUB_TOKEN` before the line.
 - **Options:** on macOS and Linux they go after the line, for example `bash <(curl ...) --no-monitor` to leave
   MPF Monitor out, `--proc` for the real machine, `--dry-run` to see the plan first. On Windows:
   `powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm <the URL above>))) -NoMonitor"`.
