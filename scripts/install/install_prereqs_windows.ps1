@@ -270,7 +270,22 @@ try {
         Write-Step "Repository: $RepoUrl ($RepoBranch) in $Root"
         $gitExe = Find-Git
         if (-not $gitExe) { $gitExe = 'git' }
-        if (Test-Path (Join-Path $Root '.git')) { Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only') }
+        if (Test-Path (Join-Path $Root '.git')) {
+            # an existing clone: update its branch, or move to $RepoBranch when that branch is gone from GitHub
+            # (a deleted pull-request branch) or none is checked out
+            $cur = (& $gitExe -C $Root symbolic-ref --short -q HEAD 2>$null)
+            $onRemote = $false
+            if ($cur) {
+                & $gitExe -C $Root ls-remote --exit-code --heads origin $cur *> $null
+                $onRemote = ($LASTEXITCODE -eq 0)
+            }
+            if ($onRemote) { Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only') }
+            else {
+                Write-Note "branch '$(if ($cur) { $cur } else { 'none' })' is no longer on GitHub: switching to $RepoBranch"
+                Invoke-Step $gitExe @('-C', $Root, 'fetch', '--prune', 'origin')
+                Invoke-Step $gitExe @('-C', $Root, 'checkout', '-B', $RepoBranch, '--track', "origin/$RepoBranch")
+            }
+        }
         else { Invoke-Step $gitExe @('clone', '--branch', $RepoBranch, $RepoUrl, $Root) }
     }
 

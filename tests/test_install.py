@@ -110,14 +110,44 @@ class TestShellScripts(unittest.TestCase):
                 self.assertEqual(0, r.returncode, r.stdout + r.stderr)
                 self.assertIn("git clone --branch some-branch https://example.invalid/tron.git " + target, r.stdout)
                 self.assertIn(os.path.join(target, "scripts", "setup.py"), r.stdout)
-                os.makedirs(os.path.join(target, ".git"), exist_ok=True)      # already cloned: pull
+                os.makedirs(os.path.join(target, ".git"), exist_ok=True)      # no branch: switch to TRON_BRANCH
                 r = sh([alone, "--dry-run"], env=env)
-                self.assertIn("git -C {} pull --ff-only".format(target), r.stdout)
+                self.assertIn("git -C {} checkout -B some-branch --track origin/some-branch".format(target), r.stdout)
                 shutil.rmtree(os.path.join(target, ".git"))
                 r = sh([os.path.join(INSTALL, name), "--dry-run"], env=env)
                 self.assertEqual(0, r.returncode, r.stdout + r.stderr)
                 self.assertNotIn("git clone", r.stdout)
                 self.assertIn(os.path.join(ROOT, "scripts", "setup.py"), r.stdout)
+
+    def test_existing_clone_branch_gone(self):
+        """An existing clone is pulled while its branch is on the remote, and moved to TRON_BRANCH once that
+        branch is deleted there (a merged pull request's branch), instead of failing."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        origin, target = os.path.join(tmp, "origin"), os.path.join(tmp, "tron")
+
+        def git(*a, cwd=tmp):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"]
+                           + list(a), cwd=cwd, check=True, capture_output=True)
+        git("init", origin)
+        git("commit", "--allow-empty", "-m", "one", cwd=origin)
+        git("branch", "feature", cwd=origin)
+        git("clone", "--branch", "feature", origin, target)
+        for name in ("install_prereqs_linux.sh", "install_prereqs_macos.sh"):
+            with self.subTest(script=name):
+                alone = os.path.join(tmp, name)
+                shutil.copy(os.path.join(INSTALL, name), alone)
+                env = {"TRON_OS_RELEASE": self.os_release("ID=debian\n"), "DISPLAY": ":0", "TRON_DIR": target,
+                       "TRON_REPO": origin}
+                r = sh([alone, "--dry-run"], env=env)
+                self.assertIn("git -C {} pull --ff-only".format(target), r.stdout)
+        git("branch", "-D", "feature", cwd=origin)
+        for name in ("install_prereqs_linux.sh", "install_prereqs_macos.sh"):
+            with self.subTest(script=name, branch="gone"):
+                r = sh([os.path.join(tmp, name), "--dry-run"], env=env)
+                self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+                self.assertIn("'feature' is no longer on GitHub", r.stdout)
+                self.assertIn("git -C {} checkout -B main --track origin/main".format(target), r.stdout)
 
     def test_build_pinproc_plan(self):
         r = sh([os.path.join(INSTALL, "build_pinproc.sh"), "--dry-run", "--python", sys.executable,

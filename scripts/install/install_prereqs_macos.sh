@@ -156,7 +156,16 @@ fi
 if [ "$CLONE" = 1 ]; then
     say "Repository: $REPO_URL ($REPO_BRANCH) in $ROOT"
     if [ -d "$ROOT/.git" ]; then
-        run git -C "$ROOT" pull --ff-only
+        # an existing clone: update its branch, or move to $REPO_BRANCH when that branch is gone from GitHub
+        # (a deleted pull-request branch) or none is checked out
+        CUR="$(git -C "$ROOT" symbolic-ref --short -q HEAD 2>/dev/null || true)"
+        if [ -n "$CUR" ] && git -C "$ROOT" ls-remote --exit-code --heads origin "$CUR" >/dev/null 2>&1; then
+            run git -C "$ROOT" pull --ff-only
+        else
+            note "branch '${CUR:-none}' is no longer on GitHub: switching to $REPO_BRANCH"
+            run git -C "$ROOT" fetch --prune origin
+            run git -C "$ROOT" checkout -B "$REPO_BRANCH" --track "origin/$REPO_BRANCH"
+        fi
     else
         run git clone --branch "$REPO_BRANCH" "$REPO_URL" "$ROOT"
     fi
