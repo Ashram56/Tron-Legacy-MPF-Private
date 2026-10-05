@@ -137,6 +137,9 @@ $AssetsUrl = if ($env:TRON_ASSETS_REPO) { $env:TRON_ASSETS_REPO } else { 'https:
 function Test-RepoAccess([string]$GitExe, [string]$Url, [switch]$Anonymous) {
     # no prompt of any kind: GIT_TERMINAL_PROMPT for git's own, GCM_INTERACTIVE for Git Credential Manager's
     # login window (it asks for a user and password, which GitHub then refuses for git)
+    # Windows PowerShell 5.1 turns a redirected native command's stderr ("fatal: could not read Username") into
+    # an error record, which 'Stop' makes fatal: only the exit code counts here
+    $ErrorActionPreference = 'Continue'
     $env:GIT_TERMINAL_PROMPT = '0'
     $env:GCM_INTERACTIVE = 'never'
     try {
@@ -329,8 +332,10 @@ try {
             $cur = (& $gitExe -C $Root symbolic-ref --short -q HEAD 2>$null)
             $onRemote = $false
             if ($cur) {
+                $ErrorActionPreference = 'Continue'     # stderr is not an error here (see Test-RepoAccess)
                 & $gitExe -C $Root ls-remote --exit-code --heads origin $cur *> $null
                 $onRemote = ($LASTEXITCODE -eq 0)
+                $ErrorActionPreference = 'Stop'
             }
             if ($onRemote) { Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only') }
             else {
