@@ -47,7 +47,7 @@ func _style_hd() -> void:
 			var sprite := get_parent().get_node_or_null(n) as Sprite2D
 			if sprite == null or sprite.texture == null:
 				continue
-			var level := sprite.modulate.r              # the classic tint: orange times the palette level
+			var level: float = sprite.get_meta("dmd_classic_tint", sprite.modulate).r   # orange times the palette level
 			sprite.modulate = Color(1, 1, 1, 1)
 			sprite.self_modulate = dmd.text_tint(Color(level, 0, 0, 1))
 			var tex := glow_texture(sprite.texture)

@@ -16,18 +16,22 @@ extends Node
 ## kept at the 4:1 aspect), textures are filtered, tron/rom_text.gd draws the text from the ROM fonts'
 ## vector outlines (fonts/hd/, tron/rom_text_hd.gd), and every sprite showing a picture of media/dmd/ shows
 ## its twin of media/dmd_hd/ (same name), scaled down to the same 128x32 footprint.
-## Text style (HD only): every DMD text (ROM text lines, the score display, the service menu, the ZUSE/TRON
-## letters, the attract and initials pages) is drawn in the text colour with a soft glow around it:
-##   colour       --dmd-text-color=#RRGGBB      TRON_DMD_TEXT_COLOR       tron/dmd/text_color       (#2a6cff)
-##   glow colour  --dmd-text-glow-color=#RRGGBB TRON_DMD_TEXT_GLOW_COLOR  tron/dmd/text_glow_color  (#22b8ff)
-##   glow         --dmd-text-glow=X             TRON_DMD_TEXT_GLOW        tron/dmd/text_glow        (0.8; 0 = none)
-## (first match wins, left to right).
-## Colour (HD only): --dmd-color=on|off (scripts/run.py --dmd-color; or TRON_DMD_COLOR=on|off, or the project
+## Colour (HD only): the DMD is Tron blue instead of the original orange. Every DMD text (ROM text lines, the
+## score display, the service menu, the ZUSE/TRON letters, the attract and initials pages) is drawn in the
+## text colour, and the effect frames tinted orange in the classic look take the same colour, level for
+## level. Optionally with a soft glow around the text:
+##   tint         --dmd-tint=blue|orange        TRON_DMD_TINT             tron/dmd/tint             (blue)
+##   colour       --dmd-text-color=#RRGGBB      TRON_DMD_TEXT_COLOR       tron/dmd/text_color       (the tint's)
+##   glow colour  --dmd-text-glow-color=#RRGGBB TRON_DMD_TEXT_GLOW_COLOR  tron/dmd/text_glow_color  (the tint's)
+##   glow         --dmd-text-glow=X             TRON_DMD_TEXT_GLOW        tron/dmd/text_glow        (0 = none)
+## (first match wins, left to right). The tint picks the default colours: blue #2a6cff (glow #22b8ff), or
+## orange #ff730d (glow #ff9a3c), the classic DMD's.
+## Animation colour (HD only): --dmd-color=on|off (scripts/run.py --dmd-color; or TRON_DMD_COLOR=on|off, or the project
 ## setting tron/dmd/color, default "on"). On, the effects' animation frames show their colour twins of
 ## media/dmd_hd_color/ (scripts/dmd_color.py: each effect's 16 shades mapped to a palette inspired by the
 ## PuP-Pack video of that moment; 2x, 256x64, made with Scale2x, drawn with nearest filtering) untinted;
-## off, the grey HD frames tinted as in classic mode. Text drawn live (tron/rom_text.gd, letter_panel.gd,
-## score_display.gd) keeps the text style above.
+## off, the grey HD frames in the DMD colour above. Text drawn live (tron/rom_text.gd, letter_panel.gd,
+## score_display.gd) keeps the colour above.
 ## Dot-matrix look (HD only): --dmd-dots=N (or TRON_DMD_DOTS=N, or tron/dmd/dots): round dots, N per DMD
 ## dot along each axis (1 = the 128x32 grid of the real display, 2 = 256x64, ...); 0 = off (default).
 
@@ -35,9 +39,11 @@ const MEDIA := "res://media/dmd/"
 const MEDIA_HD := "res://media/dmd_hd/"
 const MEDIA_COLOR := "res://media/dmd_hd_color/"
 const DOTS_SHADER := "res://tools/dmd_dots.gdshader"
+const TINTS := {"blue": ["#2a6cff", "#22b8ff"], "orange": ["#ff730d", "#ff9a3c"]}
+const DEFAULT_TINT := "blue"
 const DEFAULT_TEXT_COLOR := "#2a6cff"
 const DEFAULT_GLOW_COLOR := "#22b8ff"
-const DEFAULT_GLOW := 0.8
+const DEFAULT_GLOW := 0.0
 
 var mode := "classic"
 var hd := false
@@ -80,13 +86,23 @@ static func choose_color(args: PackedStringArray, env_color: String, setting: St
 	return setting.to_lower() != "off"
 
 
-## The text style from the user args, the environment and the project settings (first match wins): {"color",
-## "glow_color", "glow"}. Invalid values are skipped.
+## The text style from the user args, the environment and the project settings (first match wins): {"tint",
+## "color", "glow_color", "glow"}. Invalid values are skipped.
 static func choose_text_style(args: PackedStringArray, env: Dictionary, settings: Dictionary) -> Dictionary:
-	var out := {}
-	for spec in [["color", "--dmd-text-color=", "TRON_DMD_TEXT_COLOR", "tron/dmd/text_color", DEFAULT_TEXT_COLOR],
+	var tint := DEFAULT_TINT
+	var tints: Array = []
+	for a in args:
+		if a.begins_with("--dmd-tint="):
+			tints.append(a.trim_prefix("--dmd-tint="))
+	tints += [env.get("TRON_DMD_TINT", ""), settings.get("tron/dmd/tint", "")]
+	for t in tints:
+		if str(t).strip_edges().to_lower() in TINTS:
+			tint = str(t).strip_edges().to_lower()
+			break
+	var out := {"tint": tint}
+	for spec in [["color", "--dmd-text-color=", "TRON_DMD_TEXT_COLOR", "tron/dmd/text_color", TINTS[tint][0]],
 			["glow_color", "--dmd-text-glow-color=", "TRON_DMD_TEXT_GLOW_COLOR", "tron/dmd/text_glow_color",
-				DEFAULT_GLOW_COLOR],
+				TINTS[tint][1]],
 			["glow", "--dmd-text-glow=", "TRON_DMD_TEXT_GLOW", "tron/dmd/text_glow", DEFAULT_GLOW]]:
 		var values: Array = []
 		for a in args:
@@ -116,6 +132,11 @@ func text_tint(classic: Color) -> Color:
 	return Color(text_color.r * level, text_color.g * level, text_color.b * level, classic.a)
 
 
+## Whether a modulate is the classic look's tint (gen_media.py DMD_COLOR, orange times a palette level).
+static func is_classic_tint(c: Color) -> bool:
+	return c.r > 0.0 and absf(c.g - 0.45 * c.r) < 0.01 and absf(c.b - 0.05 * c.r) < 0.01
+
+
 func _enter_tree() -> void:
 	var args := OS.get_cmdline_user_args()
 	mode = choose(args, OS.get_environment("TRON_DMD"),
@@ -142,10 +163,10 @@ func _enter_tree() -> void:
 		if cinfo is Dictionary:
 			color_scale = int(cinfo.get("scale", color_scale))
 	var env := {}
-	for k in ["TRON_DMD_TEXT_COLOR", "TRON_DMD_TEXT_GLOW_COLOR", "TRON_DMD_TEXT_GLOW"]:
+	for k in ["TRON_DMD_TINT", "TRON_DMD_TEXT_COLOR", "TRON_DMD_TEXT_GLOW_COLOR", "TRON_DMD_TEXT_GLOW"]:
 		env[k] = OS.get_environment(k)
 	var settings := {}
-	for k in ["tron/dmd/text_color", "tron/dmd/text_glow_color", "tron/dmd/text_glow"]:
+	for k in ["tron/dmd/tint", "tron/dmd/text_color", "tron/dmd/text_glow_color", "tron/dmd/text_glow"]:
 		settings[k] = ProjectSettings.get_setting(k, "")
 	var st := choose_text_style(args, env, settings)
 	text_color = st["color"]
@@ -225,6 +246,10 @@ func _twin_frames(frames: SpriteFrames, in_color: bool) -> SpriteFrames:
 
 
 func _on_node_added(node: Node) -> void:
+	if node is CanvasItem and is_classic_tint((node as CanvasItem).modulate):
+		var item := node as CanvasItem
+		item.set_meta("dmd_classic_tint", item.modulate)
+		item.modulate = text_tint(item.modulate)
 	if node is Label and not ("rom_font" in node):
 		_style_label(node as Label)
 	elif node is AnimatedSprite2D:

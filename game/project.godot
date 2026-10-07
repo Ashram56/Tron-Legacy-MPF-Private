@@ -28,9 +28,8 @@ window/stretch/scale_mode="integer"
 
 dmd/mode="hd"
 dmd/dots=0
-dmd/text_color="#2a6cff"
-dmd/text_glow_color="#22b8ff"
-dmd/text_glow=0.8
+dmd/tint="blue"
+dmd/text_glow=0.0
 
 [editor_plugins]
 

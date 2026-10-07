@@ -14,23 +14,20 @@ downloads Godot, MPF and GMC and builds the media. The first run takes a while.
 **Windows 10/11** (PowerShell or cmd):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/phase11-hd/scripts/install/install_prereqs_windows.ps1 | iex"
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/main/scripts/install/install_prereqs_windows.ps1 | iex"
 ```
 
 **macOS 12+:**
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/phase11-hd/scripts/install/install_prereqs_macos.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/main/scripts/install/install_prereqs_macos.sh)
 ```
 
 **Linux** (Debian/Ubuntu, Fedora, Arch):
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/phase11-hd/scripts/install/install_prereqs_linux.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/main/scripts/install/install_prereqs_linux.sh)
 ```
-
-The lines (and the installers' default branch) use the `phase11-hd` branch until the phase branches are merged;
-then they switch to `main`.
 
 You can change where the files go, and what is installed:
 
@@ -50,7 +47,7 @@ read-protects files while it syncs them. Setup copes with that, but it is slower
 private repository answers 404 to `curl`/`irm` without a token). Install Git, then:
 
 ```sh
-git clone --recurse-submodules --branch phase11-hd https://github.com/Ashram56/Tron-Legacy-MPF.git
+git clone --recurse-submodules https://github.com/Ashram56/Tron-Legacy-MPF.git
 cd Tron-Legacy-MPF
 scripts/install/install_prereqs_linux.sh          # or install_prereqs_macos.sh
 ```
@@ -98,7 +95,8 @@ any layout.
 - `--dmd classic`: the original 128x32 dots instead of the HD DMD (the default on the desktop); `TRON_DMD=classic`
   in the environment does the same for every run.
 - `--dmd-size 1920x480`: the DMD window's size (HD scales to any size). `--dmd-dots 2`: an HD dot-matrix look.
-- `--dmd-text-color "#RRGGBB"`, `--dmd-text-glow X`: the HD text's colour and glow.
+- `--dmd-tint orange`: the HD DMD in the original orange instead of Tron blue.
+- `--dmd-text-color "#RRGGBB"`, `--dmd-text-glow X`: the HD text's colour and glow (none by default).
 - `--dmd-color off`: the HD animations in the DMD's single colour instead of the film's palette.
 
 [docs/development.md](docs/development.md#running) has the details of the HD DMD.

@@ -211,12 +211,11 @@ class TestRunSwitch(unittest.TestCase):
 
 
 # Pixel hashes (sha1 of the RGBA pixels, 16 hex digits) of HD frames at 1280x320 rendered by phase11-hd
-# (00d67c0; deff 46 re-taken after phase10-docker changed its status panel), before colour existed:
-# --dmd-color=off must keep giving these. Effects without text nodes (their
-# pictures only), times 0, 400 and 1600 ms.
+# (29b1b85: the Tron blue tint, no glow), before colour existed: --dmd-color=off must keep giving these.
+# Effects without text nodes (their pictures only), times 0, 400 and 1600 ms.
 HD_MONO = {
-    "deff_046": ["e214b6ee01710805", "8beb5ede5c32156c", "764dc5efb5f145f6"],
-    "deff_085": ["43166058c3d61514", "287d47affb38753d", "63b08551779a5221"],
+    "deff_046": ["67c19910553a69d7", "6ba267046ecc4cc3", "4bec6155c25801e6"],
+    "deff_085": ["4c87418160015986", "488eea378d4a632c", "d68d9fb12d85cd64"],
 }
 
 

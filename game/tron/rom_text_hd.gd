@@ -67,7 +67,7 @@ static func style() -> Dictionary:
 	var dmd = (Engine.get_main_loop() as SceneTree).root.get_node_or_null("DmdMode")
 	if dmd and dmd.has_method("text_style"):
 		return dmd.text_style()
-	return {"color": Color("#2a6cff"), "glow_color": Color("#22b8ff"), "glow": 0.8}
+	return {"color": Color("#2a6cff"), "glow_color": Color("#22b8ff"), "glow": 0.0}
 
 
 static func plane(s: String, base: int) -> String:

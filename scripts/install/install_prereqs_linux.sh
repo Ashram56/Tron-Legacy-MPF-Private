@@ -15,8 +15,8 @@
 set -euo pipefail
 
 # Run from a clone, it sets up that clone. Run on its own (fetched with curl, README "Install"), it first
-# clones the repository into $TRON_DIR (default ~/Tron-Legacy-MPF), branch $TRON_BRANCH (default phase11-hd
-# until the phase branches merge into main), from $TRON_REPO; an existing clone there gets a git pull.
+# clones the repository into $TRON_DIR (default ~/Tron-Legacy-MPF), branch $TRON_BRANCH (default main),
+# from $TRON_REPO; an existing clone there gets a git pull.
 SRC="${BASH_SOURCE[0]:-}"
 if [ -n "$SRC" ] && [ -f "$(dirname "$SRC")/../setup.py" ]; then
     ROOT="$(cd "$(dirname "$SRC")/../.." && pwd)" CLONE=0
@@ -24,7 +24,7 @@ else
     ROOT="${TRON_DIR:-$HOME/Tron-Legacy-MPF}" CLONE=1
 fi
 REPO_URL="${TRON_REPO:-https://github.com/Ashram56/Tron-Legacy-MPF.git}"
-REPO_BRANCH="${TRON_BRANCH:-phase11-hd}"
+REPO_BRANCH="${TRON_BRANCH:-main}"
 HERE="$ROOT/scripts/install"
 OS_RELEASE="${TRON_OS_RELEASE:-/etc/os-release}"     # tests point this at a fake one
 UV_VERSION="${UV_VERSION:-0.12.22}"

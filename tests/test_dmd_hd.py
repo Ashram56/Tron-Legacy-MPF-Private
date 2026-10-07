@@ -219,6 +219,7 @@ class TestRunSwitches(unittest.TestCase):
                          run.dmd_args([], text_color="ff0000", text_glow=0.0))
         with self.assertRaises(SystemExit):
             run.dmd_args([], text_color="blue")
+        self.assertEqual(["--", "--dmd-tint=orange"], run.dmd_args([], tint="orange"))
 
     def test_cli(self):
         seen = {}
@@ -229,6 +230,8 @@ class TestRunSwitches(unittest.TestCase):
             self.assertEqual([], seen["godot_args"])
             run.main(["--seconds", "1", "--dmd-text-color", "#2a6cff", "--dmd-text-glow", "1.5"])
             self.assertEqual(["--", "--dmd-text-color=#2a6cff", "--dmd-text-glow=1.5"], seen["godot_args"])
+            run.main(["--seconds", "1", "--dmd-tint", "orange"])
+            self.assertEqual(["--", "--dmd-tint=orange"], seen["godot_args"])
 
 
 # Pixel hashes (sha1 of the RGBA dots, 16 hex digits) of 128x32 frames rendered before the HD mode existed
@@ -297,28 +300,44 @@ class TestGodotModes(unittest.TestCase):
         self.assertEqual((1280, 320), score.size)
 
     def test_text_style(self):
-        """HD text is in the text colour (default the Tron blue #2a6cff) with a glow of the glow colour around it;
-        --dmd-text-color / TRON_DMD_TEXT_GLOW change them; the letters and the score panel follow."""
+        """HD text is in the text colour (default the Tron blue #2a6cff), without glow by default; the effect
+        frames, the letters and the score panel follow; --dmd-tint=orange is the original colour;
+        --dmd-text-glow adds a glow of the glow colour; --dmd-text-color / TRON_DMD_TEXT_GLOW change them."""
         from PIL import Image
 
         def strokes(path):
             img = Image.open(path).convert("RGB")
             px = img.load()
             return img, px
-        out = self.render(["--dmd=hd"], ["--resolution", "1280x320"])
+        out = self.render(["--dmd=hd", "--dmd-color=off"], ["--resolution", "1280x320"])   # mono animations
         img, px = strokes(os.path.join(out, "deff_025", "frame_00000.png"))
         core = [px[x, y] for x in range(img.width) for y in range(img.height) if px[x, y][2] > 200]
         self.assertGreater(len(core), 2000)
         common = max(set(core), key=core.count)
         self.assertTrue(all(abs(a - b) <= 3 for a, b in zip(common, (0x2a, 0x6c, 0xff))), common)
-        # the glow: blue-cyan light around the strokes, in the dots between the digits' black cells and beyond
         box = Image.open(os.path.join(out, "deff_025", "frame_00000.png")).convert("L").point(
             lambda p: 255 if p > 90 else 0).getbbox()
-        halo = [px[x, box[1] - 8] for x in range(box[0], box[2])]
-        self.assertTrue(any(b > 30 and b > r for r, g, b in halo), halo[::40])
+        self.assertEqual({(0, 0, 0)}, {px[x, box[1] - 8] for x in range(box[0], box[2])})   # no glow
         letters, lp = strokes(os.path.join(out, "deff_091", "frame_00002.png"))
         lit = [lp[x, y] for x in range(0, letters.width, 3) for y in range(0, letters.height, 3) if sum(lp[x, y]) > 200]
         self.assertTrue(lit and all(b >= r for r, g, b in lit))                 # blue letters, no orange
+        art, ap = strokes(os.path.join(out, "deff_046", "frame_00002.png"))
+        lit = [ap[x, y] for x in range(0, art.width, 3) for y in range(0, art.height, 3) if sum(ap[x, y]) > 200]
+        self.assertTrue(lit and all(b > r for r, g, b in lit))                  # the animation too
+        # the original orange: text and animation
+        out = self.render(["--dmd=hd", "--dmd-tint=orange", "--dmd-color=off"], ["--resolution", "1280x320"])
+        img, px = strokes(os.path.join(out, "deff_025", "frame_00000.png"))
+        core = [px[x, y] for x in range(img.width) for y in range(img.height) if px[x, y][0] > 200]
+        self.assertGreater(len(core), 2000)
+        self.assertTrue(all(abs(a - b) <= 3 for a, b in zip(max(set(core), key=core.count), (0xff, 0x73, 0x0d))))
+        art, ap = strokes(os.path.join(out, "deff_046", "frame_00002.png"))
+        lit = [ap[x, y] for x in range(0, art.width, 3) for y in range(0, art.height, 3) if sum(ap[x, y]) > 200]
+        self.assertTrue(lit and all(r > b for r, g, b in lit))
+        # the glow: blue-cyan light around the strokes, in the dots between the digits' black cells and beyond
+        out = self.render(["--dmd=hd", "--dmd-text-glow=0.8"], ["--resolution", "1280x320"])
+        img, px = strokes(os.path.join(out, "deff_025", "frame_00000.png"))
+        halo = [px[x, box[1] - 8] for x in range(box[0], box[2])]
+        self.assertTrue(any(b > 30 and b > r for r, g, b in halo), halo[::40])
         # other colour, no glow
         out = self.render(["--dmd=hd", "--dmd-text-color=#ff0000"], ["--resolution", "1280x320"],
                           env={"TRON_DMD_TEXT_GLOW": "0"})

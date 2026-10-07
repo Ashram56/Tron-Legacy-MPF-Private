@@ -44,12 +44,12 @@ param(
 $ErrorActionPreference = 'Stop'
 # Run from a clone, it sets up that clone. Run on its own (irm ... | iex, README "Install"), it first clones the
 # repository into $env:TRON_DIR (default ~\Tron-Legacy-MPF, outside OneDrive), branch $env:TRON_BRANCH (default
-# phase11-hd until the phase branches merge into main), from $env:TRON_REPO; an existing clone gets a git pull.
+# main), from $env:TRON_REPO; an existing clone gets a git pull.
 $Clone = -not ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot '..\setup.py')))
 $Root = if (-not $Clone) { Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
         elseif ($env:TRON_DIR) { $env:TRON_DIR } else { Join-Path $HOME 'Tron-Legacy-MPF' }
 $RepoUrl = if ($env:TRON_REPO) { $env:TRON_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-MPF.git' }
-$RepoBranch = if ($env:TRON_BRANCH) { $env:TRON_BRANCH } else { 'phase11-hd' }
+$RepoBranch = if ($env:TRON_BRANCH) { $env:TRON_BRANCH } else { 'main' }
 
 # The last Python 3.11 release with Windows installers (later 3.11 releases are source-only security fixes)
 $PyOrgVersion = '3.11.9'

@@ -11,7 +11,8 @@
     python scripts/run.py --dmd-size 1920x480      # DMD window size (hd scales to any size; resize it freely)
     python scripts/run.py --dmd-dots 2             # hd with a dot-matrix look (2 dots per DMD dot, 1 = 128x32)
     python scripts/run.py --dmd-color off          # hd with the animations in the DMD's single colour (default: on)
-    python scripts/run.py --dmd-text-color "#2a6cff" --dmd-text-glow 0.8   # hd text colour and glow (0 = none)
+    python scripts/run.py --dmd-tint orange        # hd in the original orange (default: Tron blue)
+    python scripts/run.py --dmd-text-color "#2a6cff" --dmd-text-glow 0.8   # hd text colour and glow (default 0 = none)
 
 Godot's log goes to game/logs/godot.log. MPF runs in this terminal; quitting it (Ctrl+C or Esc in its text UI)
 stops Godot and MPF Monitor too. On Linux without a display, Godot runs under Xvfb (xvfb-run).
@@ -157,13 +158,15 @@ def engine_arg(gargs, *args):
     return gargs[:at] + list(args) + gargs[at:]
 
 
-def dmd_args(gargs, dmd=None, dots=None, size=None, text_color=None, text_glow=None, color=None):
+def dmd_args(gargs, dmd=None, dots=None, size=None, text_color=None, text_glow=None, tint=None, color=None):
     """Godot args for the DMD mode (game/tools/dmd_mode.gd): --dmd=hd|classic, --dmd-dots=N, the window
-    size (Godot's --resolution WxH), the HD text style (--dmd-text-color=#RRGGBB, --dmd-text-glow=X) and the
-    HD animations' colour (--dmd-color=on|off). None leaves the choice to TRON_DMD... / the project settings
-    (hd, #2a6cff, 0.8, colour on)."""
+    size (Godot's --resolution WxH), the HD colours (--dmd-tint=blue|orange, --dmd-text-color=#RRGGBB,
+    --dmd-text-glow=X) and the HD animations' colour (--dmd-color=on|off). None leaves the choice to
+    TRON_DMD... / the project settings (hd, blue, no glow, colour on)."""
     if dmd:
         gargs = user_arg(gargs, "--dmd=" + dmd)
+    if tint:
+        gargs = user_arg(gargs, "--dmd-tint=" + tint)
     if color:
         gargs = user_arg(gargs, "--dmd-color=" + color)
     if dots is not None:
@@ -305,10 +308,14 @@ def main(argv=None):
                    help="hd only: the effects' animations in colour (on, default: each effect's palette, inspired by "
                         "the Tron Legacy PuP-Pack videos) or in the DMD's single colour (off). Also TRON_DMD_COLOR")
     p.add_argument("--dmd-size", metavar="WxH", help="DMD window size, for example 1920x480 (default 1024x256)")
+    p.add_argument("--dmd-tint", choices=["blue", "orange"],
+                   help="hd only: DMD colour, text and effects: blue (default, Tron blue #2a6cff) or orange (the "
+                        "original DMD's). Also TRON_DMD_TINT")
     p.add_argument("--dmd-text-color", metavar="#RRGGBB",
-                   help="hd only: text colour (default #2a6cff, a Tron blue). Also TRON_DMD_TEXT_COLOR")
+                   help="hd only: text colour (default the tint's: #2a6cff). Also TRON_DMD_TEXT_COLOR")
     p.add_argument("--dmd-text-glow", type=float, metavar="X",
-                   help="hd only: strength of the glow around the text (default 0.8, 0 = none). Also TRON_DMD_TEXT_GLOW")
+                   help="hd only: strength of the glow around the text (default 0 = none; 0.8 is soft). Also "
+                        "TRON_DMD_TEXT_GLOW")
     p.add_argument("godot_args", nargs="*", help="extra Godot arguments, after --")
     args = p.parse_args(argv)
     text_ui = args.text_ui
@@ -316,7 +323,8 @@ def main(argv=None):
         text_ui = sys.stdin.isatty() and sys.stdout.isatty() and args.seconds is None
     return run(args.hw, monitor=args.monitor, scenario=args.scenario, seconds=args.seconds, text_ui=text_ui,
                free_play=args.free_play, godot_args=dmd_args(args.godot_args, args.dmd, args.dmd_dots, args.dmd_size,
-                                                     args.dmd_text_color, args.dmd_text_glow, args.dmd_color),
+                                                     args.dmd_text_color, args.dmd_text_glow, args.dmd_tint,
+                                                     args.dmd_color),
                trace=args.trace and os.path.abspath(args.trace))
 
 
