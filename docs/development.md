@@ -149,7 +149,7 @@ pixels (what `scripts/render_diff.py` checks against the ROM captures). To go ba
 | `--dmd-color off` (or `TRON_DMD_COLOR=off`) | HD with the animations in the DMD's single colour (default: on, see HD colour below) |
 | `--dmd-tint blue\|orange` (or `TRON_DMD_TINT`, `tron/dmd/tint`) | HD DMD colour, text and animations: Tron blue (default) or the original orange |
 | `--dmd-text-color "#RRGGBB"` (or `TRON_DMD_TEXT_COLOR`, `tron/dmd/text_color`) | HD text colour (default the tint's, `#2a6cff`): ROM text, score display, service menu, ZUSE/TRON letters, attract pages |
-| `--dmd-text-glow X` (or `TRON_DMD_TEXT_GLOW`, `tron/dmd/text_glow`) | strength of the glow around HD text (default 0 = none; 0.8 is a soft glow); its colour: `TRON_DMD_TEXT_GLOW_COLOR` or `tron/dmd/text_glow_color` (default the tint's, `#22b8ff`) |
+| `--dmd-text-glow X` (or `TRON_DMD_TEXT_GLOW`, `tron/dmd/text_glow`) | strength of the glow around HD text (default 0.75, a soft glow; 0 = none); its colour: `TRON_DMD_TEXT_GLOW_COLOR` or `tron/dmd/text_glow_color` (default the tint's, `#22b8ff`) |
 
 `--hw proc` is always classic: the P-ROC drives the machine's own 128x32 DMD. Godot reads the same choice
 from its user args (`godot --path game -- --dmd=classic --dmd-dots=2`); `game/tools/dmd_mode.gd` applies it.

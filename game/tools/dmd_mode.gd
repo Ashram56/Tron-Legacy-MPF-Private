@@ -23,7 +23,7 @@ extends Node
 ##   tint         --dmd-tint=blue|orange        TRON_DMD_TINT             tron/dmd/tint             (blue)
 ##   colour       --dmd-text-color=#RRGGBB      TRON_DMD_TEXT_COLOR       tron/dmd/text_color       (the tint's)
 ##   glow colour  --dmd-text-glow-color=#RRGGBB TRON_DMD_TEXT_GLOW_COLOR  tron/dmd/text_glow_color  (the tint's)
-##   glow         --dmd-text-glow=X             TRON_DMD_TEXT_GLOW        tron/dmd/text_glow        (0 = none)
+##   glow         --dmd-text-glow=X             TRON_DMD_TEXT_GLOW        tron/dmd/text_glow        (0.75; 0 = none)
 ## (first match wins, left to right). The tint picks the default colours: blue #2a6cff (glow #22b8ff), or
 ## orange #ff730d (glow #ff9a3c), the classic DMD's.
 ## Animation colour (HD only): --dmd-color=on|off (scripts/run.py --dmd-color; or TRON_DMD_COLOR=on|off, or the project
@@ -44,7 +44,7 @@ const TINTS := {"blue": ["#2a6cff", "#22b8ff"], "orange": ["#ff730d", "#ff9a3c"]
 const DEFAULT_TINT := "blue"
 const DEFAULT_TEXT_COLOR := "#2a6cff"
 const DEFAULT_GLOW_COLOR := "#22b8ff"
-const DEFAULT_GLOW := 0.0
+const DEFAULT_GLOW := 0.75
 
 var mode := "classic"
 var hd := false

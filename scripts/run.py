@@ -12,7 +12,7 @@
     python scripts/run.py --dmd-dots 2             # hd with a dot-matrix look (2 dots per DMD dot, 1 = 128x32)
     python scripts/run.py --dmd-color off          # hd with the animations in the DMD's single colour (default: on)
     python scripts/run.py --dmd-tint orange        # hd in the original orange (default: Tron blue)
-    python scripts/run.py --dmd-text-color "#2a6cff" --dmd-text-glow 0.8   # hd text colour and glow (default 0 = none)
+    python scripts/run.py --dmd-text-color "#2a6cff" --dmd-text-glow 0     # hd text colour and glow (default 0.75; 0 = none)
 
 Godot's log goes to game/logs/godot.log. MPF runs in this terminal; quitting it (Ctrl+C or Esc in its text UI)
 stops Godot and MPF Monitor too. On Linux without a display, Godot runs under Xvfb (xvfb-run).
@@ -314,7 +314,7 @@ def main(argv=None):
     p.add_argument("--dmd-text-color", metavar="#RRGGBB",
                    help="hd only: text colour (default the tint's: #2a6cff). Also TRON_DMD_TEXT_COLOR")
     p.add_argument("--dmd-text-glow", type=float, metavar="X",
-                   help="hd only: strength of the glow around the text (default 0 = none; 0.8 is soft). Also "
+                   help="hd only: strength of the glow around the text (default 0.75, a soft glow; 0 = none). Also "
                         "TRON_DMD_TEXT_GLOW")
     p.add_argument("godot_args", nargs="*", help="extra Godot arguments, after --")
     args = p.parse_args(argv)

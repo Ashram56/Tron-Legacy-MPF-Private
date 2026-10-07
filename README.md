@@ -96,7 +96,7 @@ any layout.
   in the environment does the same for every run.
 - `--dmd-size 1920x480`: the DMD window's size (HD scales to any size). `--dmd-dots 2`: an HD dot-matrix look.
 - `--dmd-tint orange`: the HD DMD in the original orange instead of Tron blue.
-- `--dmd-text-color "#RRGGBB"`, `--dmd-text-glow X`: the HD text's colour and glow (none by default).
+- `--dmd-text-color "#RRGGBB"`, `--dmd-text-glow X`: the HD text's colour and glow (0.75 by default; `--dmd-text-glow 0` turns it off).
 - `--dmd-color off`: the HD animations in the DMD's single colour instead of the film's palette.
 
 [docs/development.md](docs/development.md#running) has the details of the HD DMD.

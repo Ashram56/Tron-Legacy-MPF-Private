@@ -300,7 +300,7 @@ class TestGodotModes(unittest.TestCase):
         self.assertEqual((1280, 320), score.size)
 
     def test_text_style(self):
-        """HD text is in the text colour (default the Tron blue #2a6cff), without glow by default; the effect
+        """HD text is in the text colour (default the Tron blue #2a6cff), with a 0.75 glow by default; the effect
         frames, the letters and the score panel follow; --dmd-tint=orange is the original colour;
         --dmd-text-glow adds a glow of the glow colour; --dmd-text-color / TRON_DMD_TEXT_GLOW change them."""
         from PIL import Image
@@ -309,7 +309,7 @@ class TestGodotModes(unittest.TestCase):
             img = Image.open(path).convert("RGB")
             px = img.load()
             return img, px
-        out = self.render(["--dmd=hd", "--dmd-color=off"], ["--resolution", "1280x320"])   # mono animations
+        out = self.render(["--dmd=hd", "--dmd-color=off", "--dmd-text-glow=0"], ["--resolution", "1280x320"])   # mono
         img, px = strokes(os.path.join(out, "deff_025", "frame_00000.png"))
         core = [px[x, y] for x in range(img.width) for y in range(img.height) if px[x, y][2] > 200]
         self.assertGreater(len(core), 2000)
