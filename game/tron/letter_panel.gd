@@ -8,6 +8,8 @@ extends Node
 ## between blinks. all_new: every letter blinks that way. Seekable for scripts/render_diff.py (seek_ms).
 ## HD mode (tools/dmd_mode.gd): the letters in the DMD text colour (same levels), each with a soft glow of
 ## the glow colour around its lit dots (a blurred copy of the letter, outside its strokes, added over it).
+## Serum colour (--dmd-color=on): letters with a colour twin (scripts/dmd_color.py sprite_build) keep its
+## colours, with no tint and no glow.
 
 @export var lit_key := "lit"
 @export var new_key := "new"
@@ -46,6 +48,9 @@ func _style_hd() -> void:
 		for n in ["Solid%d" % i, "Hollow%d" % i]:
 			var sprite := get_parent().get_node_or_null(n) as Sprite2D
 			if sprite == null or sprite.texture == null:
+				continue
+			if sprite.texture.resource_path.begins_with(dmd.MEDIA_COLOR):   # Serum colours: as they are
+				sprite.self_modulate = Color(1, 1, 1, 1)
 				continue
 			var level: float = sprite.get_meta("dmd_classic_tint", sprite.modulate).r   # orange times the palette level
 			sprite.modulate = Color(1, 1, 1, 1)

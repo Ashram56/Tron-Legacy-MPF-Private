@@ -48,6 +48,7 @@ import colorsys
 import hashlib
 import json
 import os
+import re
 import sys
 
 import fsutil  # Windows/OneDrive-safe renames and folder wipes
@@ -517,6 +518,157 @@ def serum_build(folders, dst_root, scale, crom, cache=None, processes=None):
     return {os.path.basename(fo): e for fo, e in zip(folders, entries) if e is not None}
 
 
+# ---------------------------------------------------------------------- Serum sprites
+
+# The sprites the game draws over its effects: the ZUSE / TRON target letters (tron/letter_panel.gd: solid at
+# full level, hollow at level 2, x 42 + 21 * i) and the Flynn's Arcade reel (tron/arcade_reel.gd: cabinets at
+# y 0, award icons at y 5, scrolling from x 82). {deff: (y, kind of each file)}; the reel's x is any place
+# inside it (its Serum frames colour the whole reel by shade).
+SPRITE_DEFFS = {91: 5, 92: 5, 94: 1, 107: 5, 105: None}
+LETTER_SETS = {91: "zuse", 92: "zuse", 94: "zuse", 107: "tron"}
+REEL_X = 54
+SHOWN = 0.9             # share of a sprite's lit dots its capture must show in the same shades: drawn there
+
+
+def sprite_shades(path):
+    """(width, height, [shade or None (transparent)]) of a sprite: letters' hollow images are drawn at level
+    UNLIT 2 (gen_media.UNLIT_LEVEL), other pictures by their greys."""
+    from PIL import Image
+    im = Image.open(path).convert("RGBA")
+    hollow = os.path.basename(path).startswith("hollow")
+    out = []
+    for r, g, b, a in im.getdata():
+        if not a:
+            out.append(None)
+        else:
+            v = min(15, round(r / 17))
+            out.append(2 if hollow and v else v)
+    return im.width, im.height, out
+
+
+def sprite_place(deff, name, w):
+    """(x, y) of a sprite in its effect's 128x32 frame."""
+    if deff == 105:
+        return (REEL_X, 0) if name.startswith("cabinet") else (REEL_X + 8, 5)
+    i = int(name[-5])
+    return 42 + 21 * i, SPRITE_DEFFS[deff]
+
+
+def colour_sprite(s, spr, x, y, base, fid):
+    """The colours of a sprite's dots (None: transparent) drawn at (x, y) over base (shades) in Serum frame
+    fid, as libserum colours that screen; and the share of its lit dots not black."""
+    w, h, sh = spr
+    frame = bytearray(base)
+    for j in range(h):
+        for i in range(w):
+            v = sh[j * w + i]
+            if v is not None and 0 <= x + i < s.width and 0 <= y + j < s.height:
+                frame[(y + j) * s.width + x + i] = v
+    idx = s.colorize_frame(bytes(frame), fid)
+    pal = s.palette(fid)
+    cols, lit, seen = [], 0, 0
+    for j in range(h):
+        for i in range(w):
+            v = sh[j * w + i]
+            inside = 0 <= x + i < s.width and 0 <= y + j < s.height
+            c = tuple(pal[idx[(y + j) * s.width + x + i]]) if inside and v is not None else None
+            cols.append(c if v is not None else None)
+            if v:
+                lit += 1
+                seen += bool(c) and sum(c) > 0
+    return cols, seen / lit if lit else 0.0
+
+
+def sprite_build(src_root, dst_root, crom, scale=COLOR_SCALE):
+    """The sprites of SPRITE_DEFFS in their Serum colours, scale times larger (Scale2x), with their
+    transparency, into dst_root (same names). Each picture (the same image in several effects is coloured
+    once) takes the colours of the capture frame of its effects that shows it (SHOWN of its dots), else of
+    the capture's Serum frame with it drawn in (the arcade reel: one colour ramp by shade). Letters not shown
+    by a capture frame found by CRC, and pictures none colours (SHOWN of their lit dots not black), take shade
+    by shade the colours of the letters of their set and kind, else of their kind (TRON's solid letters:
+    ZUSE's). Returns {"deff_NNN/name":
+    {"serum_id", "how"}}."""
+    import glob
+    from collections import Counter, defaultdict
+    from PIL import Image
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import serum
+    s = serum.Serum(crom)
+    caps = {d: capture_serum(s, capture_path(d)) if capture_path(d) else [] for d in SPRITE_DEFFS}
+    files = defaultdict(list)            # image bytes -> [(deff, name)]
+    for d in SPRITE_DEFFS:
+        for p in sorted(glob.glob(os.path.join(src_root, "deff_%03d" % d, "*.png"))):
+            name = os.path.basename(p)
+            if name.startswith("f") and name[1:-4].isdigit():
+                continue
+            with open(p, "rb") as fp:
+                files[fp.read()].append((d, name))
+    done, info = {}, {}
+    for data, uses in files.items():
+        d0, n0 = uses[0]
+        spr = sprite_shades(os.path.join(src_root, "deff_%03d" % d0, n0))
+        w, h, sh = spr
+        best = None
+        for d, name in uses:
+            x, y = sprite_place(d, name, w)
+            for cap, fid, by_crc in caps[d]:
+                lit = [(j, i) for j in range(h) for i in range(w) if sh[j * w + i]]
+                same = sum(1 for j, i in lit if 0 <= x + i < 128 and 0 <= y + j < 32
+                           and cap[(y + j) * 128 + x + i] == sh[j * w + i])
+                shown = bool(lit) and same >= SHOWN * len(lit)
+                cols, ok = colour_sprite(s, spr, x, y, cap, fid)
+                key = (shown, ok)
+                if best is None or key > best[0]:
+                    best = (key, cols, fid, by_crc)
+        if best and best[0][1] >= SHOWN:
+            done[data] = (best[1], best[2], ("capture" if best[3] else "screen") if best[0][0] else "placed")
+        else:
+            done[data] = None
+    # letters shown by a capture frame the colourisation finds by CRC keep its colours dot by dot; the others
+    # (found by screen only: the colourist's letters may be collected where the capture's are not) take, shade
+    # by shade, the colours of their set's letters of their kind, and so do the pictures none colours (TRON's
+    # solid letters: those of ZUSE's); a kind none colours keeps its greys
+    def group(d, name):
+        kind = re.sub(r"\d*\.png$", "", name)
+        return (LETTER_SETS.get(d, d), kind), kind
+
+    tables = defaultdict(lambda: defaultdict(Counter))
+    for data, uses in files.items():
+        if done[data]:
+            d, name = uses[0]
+            sh = sprite_shades(os.path.join(src_root, "deff_%03d" % d, name))[2]
+            for key in group(d, name):
+                for v, c in zip(sh, done[data][0]):
+                    if v and c:
+                        tables[key][v][c] += 1
+    for data, uses in files.items():
+        d, name = uses[0]
+        if done[data] and (d not in LETTER_SETS or done[data][2] == "capture"):
+            continue
+        sh = sprite_shades(os.path.join(src_root, "deff_%03d" % d, name))[2]
+        own, kind = group(d, name)
+        table = tables.get(own) or tables.get(kind) or {}
+        cols = [None if v is None else (0, 0, 0) if not v else
+                (table[v].most_common(1)[0][0] if v in table else (17 * v,) * 3) for v in sh]
+        fid = done[data][1] if done[data] else None
+        done[data] = (cols, fid, done[data][2] if done[data] else "shades")
+    for data, uses in files.items():
+        d, name = uses[0]
+        w, h, sh = sprite_shades(os.path.join(src_root, "deff_%03d" % d, name))
+        cols, fid, how = done[data]
+        lut = sorted({c for c in cols if c})
+        vals = [0 if c is None else 1 + lut.index(c) for c in cols]
+        rows = scale_indices(vals, w, h, scale)
+        rgba = [(0, 0, 0, 0)] + [c + (255,) for c in lut]
+        img = Image.new("RGBA", (len(rows[0]), len(rows)))
+        img.putdata([rgba[v] for row in rows for v in row])
+        for d, name in uses:
+            os.makedirs(os.path.join(dst_root, "deff_%03d" % d), exist_ok=True)
+            img.save(os.path.join(dst_root, "deff_%03d" % d, name), compress_level=6)
+            info["deff_%03d/%s" % (d, name)] = {"serum_id": fid, "how": how}
+    return info
+
+
 # ---------------------------------------------------------------------- build
 
 def color_file(job):
@@ -551,8 +703,8 @@ def color_file(job):
 
 def build(src_root, dst_root, scale, cache=None, processes=None, crom=None):
     """Every effect frame (f*.png) of src_root (game/media/dmd) upscaled in colour into dst_root (same
-    names); the letter sprites stay out (tron/letter_panel.gd draws them: text). crom: the Serum
-    colourisation (serum_build) for the effects it knows. Returns the frame count."""
+    names). crom: the Serum colourisation (serum_build) for the effects it knows, and the sprites drawn over
+    them (sprite_build: letters, the arcade reel) in its colours. Returns the frame count."""
     import glob
     from PIL import Image
     import dmd_hd
@@ -586,8 +738,9 @@ def build(src_root, dst_root, scale, cache=None, processes=None, crom=None):
         if text_frames:
             palettes[name]["text_frames"] = text_frames
     os.makedirs(dst_root, exist_ok=True)
+    sprites = sprite_build(src_root, dst_root, crom, scale) if by_serum and scale == COLOR_SCALE else {}
     with open(os.path.join(dst_root, "palettes.json"), "w", encoding="utf-8", newline="\n") as f:
-        json.dump({"scale": scale, "text": palette_hex(tpal), "deffs": palettes,
+        json.dump({"scale": scale, "text": palette_hex(tpal), "deffs": palettes, "sprites": sprites,
                    "serum": os.path.basename(crom) if by_serum else None}, f, indent=0, sort_keys=True)
     if not jobs:
         return sum(e["serum_frames"] + e["capture_frames"] + e["near_frames"] + e["shade_frames"]

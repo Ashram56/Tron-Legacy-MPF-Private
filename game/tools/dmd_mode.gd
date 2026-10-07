@@ -30,8 +30,9 @@ extends Node
 ## setting tron/dmd/color, default "on"). On, the effects' animation frames show their colour twins of
 ## media/dmd_hd_color/ (scripts/dmd_color.py: each effect's 16 shades mapped to a palette inspired by the
 ## PuP-Pack video of that moment; 2x, 256x64, made with Scale2x, drawn with nearest filtering) untinted;
-## off, the grey HD frames in the DMD colour above. Text drawn live (tron/rom_text.gd, letter_panel.gd,
-## score_display.gd) keeps the colour above.
+## off, the grey HD frames in the DMD colour above. Text drawn live (tron/rom_text.gd, score_display.gd) keeps
+## the colour above. The sprites with a colour twin there (the ZUSE/TRON letters of letter_panel.gd, the
+## arcade reel's cabinets and icons: the Serum colourisation's colours) show it instead, untinted.
 ## Dot-matrix look (HD only): --dmd-dots=N (or TRON_DMD_DOTS=N, or tron/dmd/dots): round dots, N per DMD
 ## dot along each axis (1 = the 128x32 grid of the real display, 2 = 256x64, ...); 0 = off (default).
 
@@ -212,6 +213,15 @@ func hd_texture(tex: Texture2D, in_color := false) -> Texture2D:
 	return load(path) if ResourceLoader.exists(path) else null
 
 
+## The colour twin of a classic DMD sprite (letters, the arcade reel: scripts/dmd_color.py sprite_build, in the
+## Serum colourisation's colours, color_scale times larger), or null when the colour is off or it has none.
+func color_texture(tex: Texture2D) -> Texture2D:
+	if not (hd and color) or tex == null or not tex.resource_path.begins_with(MEDIA):
+		return null
+	var path := MEDIA_COLOR + tex.resource_path.trim_prefix(MEDIA)
+	return load(path) if ResourceLoader.exists(path) else null
+
+
 ## The HD frames of an effect animation: all in colour (color on and every frame has its colour twin), else
 ## all grey; the classic frames when an HD twin is missing.
 func _hd_frames(frames: SpriteFrames) -> SpriteFrames:
@@ -265,6 +275,13 @@ func _on_node_added(node: Node) -> void:
 				sprite.scale = sprite.scale / frame_scale
 	elif node is Sprite2D:
 		var s := node as Sprite2D
+		var colored := color_texture(s.texture)
+		if colored:                                    # its Serum colours: no DMD tint, crisp dots
+			s.texture = colored
+			s.scale = s.scale / color_scale
+			s.modulate = Color(1, 1, 1, s.modulate.a)
+			s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			return
 		var big := hd_texture(s.texture)
 		if big:
 			s.texture = big

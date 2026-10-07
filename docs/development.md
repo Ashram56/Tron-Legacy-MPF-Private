@@ -184,6 +184,12 @@ the colours of the nearest Serum frame or the effect's Serum shade colours. `pal
 `shade_frames`. 83 effects are in Serum colours. Of the others with pictures, none of whose frames or capture
 the colourisation finds, the service, error and tournament screens keep the default palette and End of Line,
 Sea of Simulation, Recognizer battle, ZUSE ready, the CLU face and the big bumps screen their PuP hues.
+The sprites drawn over the effects (the ZUSE/TRON letters of `letter_panel.gd`, the arcade reel's cabinets and
+icons) get colour twins too, RGBA at 2x in `game/media/dmd_hd_color/deff_NNN/` (`sprite_build`, listed under
+`sprites` in `palettes.json`): each is coloured by the Serum frame of the capture that shows it, or pasted at its
+place into a Serum frame of its effect; letters that only a screen match finds take a per-shade table (metallic
+solid ZUSE, grey hollow ZUSE, blue hollow TRON). `tools/dmd_mode.gd` swaps them in (`color_texture`); the
+letters keep those colours with no tint or glow, and the reel draws them at half scale.
 
 **P-ROC:** MPF's wheel ships the pypinproc binary for Windows (`pinproc.cp3xx-win_amd64.pyd`), so there
 `--hw proc` works once FTDI's D2XX driver and the Visual C++ runtime are installed. On Linux and macOS (MPF's

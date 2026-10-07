@@ -199,7 +199,31 @@ class TestColorMedia(unittest.TestCase):
             self.assertEqual("RGB", big.mode)
             w, h = Image.open(src).size
             self.assertEqual((w * dmd_color.COLOR_SCALE, h * dmd_color.COLOR_SCALE), big.size)
-        self.assertEqual([], glob.glob(os.path.join(GAME, "media", "dmd_hd_color", "*", "solid*.png")))
+
+    def test_sprites_in_serum_colours(self):
+        """The letters and the arcade reel's pictures have colour twins (with the Serum file): 2x, with their
+        transparency; ZUSE's solid letters as the colourisation shows them, the reel in its green."""
+        from PIL import Image
+        info = json.load(open(os.path.join(GAME, "media", "dmd_hd_color", "palettes.json"), encoding="utf-8"))
+        if not info.get("serum"):
+            self.assertEqual({}, info.get("sprites", {}))
+            return
+        sprites = [p for d in dmd_color.SPRITE_DEFFS
+                   for p in glob.glob(os.path.join(GAME, "media", "dmd", "deff_%03d" % d, "*.png"))
+                   if not os.path.basename(p)[1:-4].isdigit()]
+        self.assertEqual(4 * 8 + 28, len(sprites))
+        for src in sprites:
+            rel = os.path.relpath(src, os.path.join(GAME, "media", "dmd")).replace(os.sep, "/")
+            self.assertIn(rel, info["sprites"])
+            big = Image.open(os.path.join(GAME, "media", "dmd_hd_color", rel))
+            self.assertEqual("RGBA", big.mode)
+            small = Image.open(src).convert("RGBA")
+            self.assertEqual((small.width * 2, small.height * 2), big.size)
+            self.assertEqual(small.getchannel("A").getbbox() is None, big.getchannel("A").getbbox() is None)
+        self.assertEqual("capture", info["sprites"]["deff_092/solid0.png"]["how"])
+        r, g, b, _ = Image.open(os.path.join(GAME, "media", "dmd_hd_color", "deff_105", "award_01_a.png")).convert(
+            "RGBA").getpixel((10, 20))
+        self.assertTrue(g > 0 and r == 0 and b == 0, (r, g, b))
 
 
 class TestRunSwitch(unittest.TestCase):
