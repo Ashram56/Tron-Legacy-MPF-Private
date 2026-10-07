@@ -15,8 +15,9 @@ enables 6, mux 1) = AUX_DRV and "secondary" enables 11 = the strobe latch. The l
 l_right_ramp_tube stay virtual MPF lights that shows and tron/lamps.py drive as before; this module polls
 their colour and rewrites the program when the 4-bit colour changes.
 
-Off unless the machine variable proc_ramp_tubes is 1 (hw_proc.yaml, machine_vars): the aux bus writes are unverified on a
-real machine (docs/hardware.md, "Ramp light tubes"). With the virtual platform (tests) this does nothing.
+Off unless the machine variables proc_ramp_tubes (hw_proc_le.yaml: the aux bus writes are unverified on a real machine,
+docs/hardware.md, "Ramp light tubes") and fiber_optics (1 on an LE, 0 on a Pro unless fiber_optics.yaml enables it) are
+both 1. With the virtual platform (tests) this does nothing.
 """
 from mpf.core.custom_code import CustomCode
 
@@ -59,7 +60,8 @@ class ProcHardware(CustomCode):
         self.platform = None
         self.aux_index = None
         self.colours = None
-        if not self.machine.variables.get_machine_var("proc_ramp_tubes"):
+        var = self.machine.variables.get_machine_var
+        if not var("proc_ramp_tubes") or var("fiber_optics") == 0:
             return
         self.machine.events.add_handler("init_phase_5", self._start)
 

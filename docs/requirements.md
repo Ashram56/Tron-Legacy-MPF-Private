@@ -68,9 +68,9 @@ On Linux, `--python-any` makes the installer accept any 3.10 to 3.14 already ins
 `git clone --recurse-submodules ...`. Otherwise `setup.py` runs `git submodule update --init --depth 1 assets`
 itself. Git LFS is not needed: setup sets `GIT_LFS_SKIP_SMUDGE=1`.
 
-## Godot 4.5.2 (GMC 1.0.0)
+## Godot 4.6.3 (GMC 1.0.0)
 
-`setup.py` downloads the official Godot 4.5.2 build for the OS and CPU into `tools/godot/` (about 130 MB
+`setup.py` downloads the official Godot 4.6.3 build for the OS and CPU into `tools/godot/` (about 130 MB
 unpacked). GMC 1.0.0 goes into `game/addons/mpf-gmc/`. The project uses Godot's Mobile renderer, which draws
 with Vulkan and falls back to OpenGL 3.3. The render check forces OpenGL with `--rendering-driver opengl3`.
 

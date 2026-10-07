@@ -13,7 +13,7 @@ built from the reverse-engineered rules, media and effects in
 | `assets/` | Git submodule: [Tron-Legacy-LE-ROM-Decryption](https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption), the rules specs, MPF config and media read from the ROM. Never copy files out of it; reference them, so a sync never leaves stale copies. |
 | `game/` | The MPF machine folder and the Godot (GMC) project in one: `config/`, `modes/`, `slides/`, `project.godot`, `gmc.cfg`. Kept apart from `assets/` so Godot does not import the asset repo's 12,000 files. |
 | `scripts/` | Workspace setup (`setup.py`, `toolchain.py`, the prerequisite installers in `install/`), the launcher (`run.py`), the render check and the asset sync. |
-| `docs/` | `requirements.md`: what a computer needs, per OS. `hardware.md`: the two hardware configs (virtual + MPF Monitor, and the real machine on a Multimorphic P-ROC). |
+| `docs/` | `requirements.md`: what a computer needs, per OS. `hardware.md`: the two hardware configs (virtual + MPF Monitor, and the real machine on a Multimorphic P-ROC). `vpx.md`: the Visual Pinball X table played by MPF. |
 | `docker/` | The optional Docker setup for Linux hosts: one container per window (DMD, MPF, MPF Monitor). |
 
 ## What is in git, what is not
@@ -108,6 +108,7 @@ UI). Godot's log is `game/logs/godot.log`.
 | `python scripts/run.py --monitor` | The same plus MPF Monitor (`mpf monitor`, layout in `game/monitor/`): click switches, see lamps and coils. |
 | `python scripts/run.py --scenario NAME` | Plays `assets/rules/traces/NAME.txt` in real time on smart_virtual. |
 | `python scripts/run.py --hw proc` | The real machine: Multimorphic P-ROC on the Stern SAM IO board; Godot gets `-- --proc-dmd` for the DMD. |
+| `python scripts/run.py --hw vpx` | Visual Pinball X plays the VPW table and MPF replaces PinMAME, through the `TronMPF.Controller` bridge (Windows). Set-up, device map and checks: [docs/vpx.md](vpx.md). |
 
 **Playing on the desktop.** With the DMD window focused, keys close the machine's switches (`game/gmc.cfg`,
 `[keyboard]`); in MPF Monitor, click a switch instead (`s_coin`, `s_start_button` and the other cabinet
@@ -148,6 +149,8 @@ pixels (what `scripts/render_diff.py` checks against the ROM captures). To go ba
 | `--dmd-size WxH` | the window size, for example `1920x480` (default 1024x256; HD scales to any size, classic in whole steps) |
 | `--dmd-color off` (or `TRON_DMD_COLOR=off`) | HD with the animations in the DMD's single colour (default: on, see HD colour below) |
 | `--dmd-tint blue\|orange` (or `TRON_DMD_TINT`, `tron/dmd/tint`) | HD DMD colour, text and animations: Tron blue (default) or the original orange |
+| `--dmd-font NAME` (or `TRON_DMD_FONT`, `tron/dmd/font`) | HD text font: `orbitron` (default), `rajdhani`, `godot` (Godot's default font), a `.ttf`/`.otf` file, or `rom` (the ROM's dot fonts traced to smooth outlines). Clean fonts keep the ROM layout: same lines and alignment, the ROM's capital height, squeezed to the ROM's text width when wider |
+| `--dmd-text-scale X` (or `TRON_DMD_TEXT_SCALE`, `tron/dmd/text_scale`) | size of the clean HD fonts: 1 = capitals as tall as the ROM's and lines no wider than the ROM's text; default 0.85; 0.5-1.5. Lines shrink about their middle |
 | `--dmd-text-color "#RRGGBB"` (or `TRON_DMD_TEXT_COLOR`, `tron/dmd/text_color`) | HD text colour (default the tint's, `#2a6cff`): ROM text, score display, service menu, ZUSE/TRON letters, attract pages |
 | `--dmd-text-glow X` (or `TRON_DMD_TEXT_GLOW`, `tron/dmd/text_glow`) | strength of the glow around HD text (default 0.75, a soft glow; 0 = none); its colour: `TRON_DMD_TEXT_GLOW_COLOR` or `tron/dmd/text_glow_color` (default the tint's, `#22b8ff`) |
 

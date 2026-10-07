@@ -64,6 +64,11 @@ SPECIAL_LAMP = 8            # DAT_00039178: the special insert, the left outlane
 SPECIAL_OVER_LIMIT_SCORE = 5000000
 LOST_BALL_SEARCH = 5        # ball_search_start(5) with adj 63 LOST BALL RECOVERY: a lost ball is fed [0x0001f79c]
 COINDOOR_SAVE_TICKS, COINDOOR_GRACE_TICKS = 0x138, 0xbb     # coin door opened in play, adj 41 [0x0001ff74]
+POWER_OFF_DEFF = 4          # "50V / 20V DISABLED / CLOSE COIN DOOR ..." while the door is open [0x01036f1c]
+POWER_OFF_DIM_TICKS = 8 + 10 * 8 + 1875     # deff 4: shown, title blinks 10 x 8 ticks, 1875 ticks, then dimmed
+POWER_OFF_DIM_LEVEL = 6                     # palette_fill(6) of the dimmed screen [0x01036fd4]
+POWER_OFF_CANCEL_SOUND = 0x009              # BACK takes the warning away [0x0000fc20]
+SERVICE_CONFIRM_SECONDS = 5                 # SELECT in a game: the end-the-game question waits this long
 DYNAMIC_REPLAY_MIN = 5000000                                # dynamic replay floor [0x000231a4]
 
 
@@ -85,9 +90,9 @@ def adjustment_defaults(settings_path):
     return {n: tuple(v) for n, v in out.items()}
 
 
-# shaker_run(strength, min_setting): strength 1/2/3 runs the motor (coil 8) about 75/265/1100 ms
-# (assets/mpf_package/config/shaker.yaml, observed on coil 8 in emulated play)
-SHAKER_MS = {1: 75, 2: 265, 3: 1100}
+# shaker_run(strength, min_setting): strength 1/2/3 runs the motor (coil 8) 200/384/1024 ms (ROM table 0x040d3998,
+# assets/rom_data/io/coils.csv; same table on the Pro, assets/docs/PRO_VS_LE.md)
+SHAKER_MS = {1: 200, 2: 384, 3: 1024}
 SHAKER_ADJ = 86              # adjustment 86 SHAKER MOTOR: 0 none, 1 minimal, 2 moderate, 3 maximal
 
 
@@ -224,6 +229,10 @@ class TronOS(CustomCode):
         sw.add_switch_handler("s_left_flipper", lambda: self._flipper_launch(1))
         sw.add_switch_handler("s_right_flipper", lambda: self._flipper_launch(2))
         sw.add_switch_handler("s_coin_door_open", self._coin_door_opened)
+        sw.add_switch_handler("s_coin_door_open", self._coin_door_closed, state=0)
+        self._power_off_run = 0     # counts deff 4 starts, so a dim timer of an earlier start does nothing
+        self._service_confirm = None    # clock handle while the end-the-game question is up
+        self._service_kill = False      # the game is ending into the service menu
         sw.add_switch_handler("s_service_select", self._service_select)
         self.in_service = False     # the service menu (mode tron_service) is running
 
@@ -581,11 +590,17 @@ class TronOS(CustomCode):
         if self.adj[SHAKER_ADJ] < min_setting or self.state & 0x310 or not self.game:
             return False
         ms = SHAKER_MS.get(strength, SHAKER_MS[1])
+        now = self.machine.clock.get_time()
+        if now + ms / 1000.0 <= getattr(self, "_shaker_until", 0):
+            return True             # a new run only replaces a shorter one (assets/mpf_package/config/shows/shaker_*)
+        self._shaker_until = now + ms / 1000.0
         coil = self.machine.coils.get("c_shaker_motor_optional")
         if coil is not None:
             try:
                 coil.enable()
-                self.machine.clock.schedule_once(lambda: coil.disable(), ms / 1000.0)
+                if getattr(self, "_shaker_stop", None):
+                    self.machine.clock.unschedule(self._shaker_stop)
+                self._shaker_stop = self.machine.clock.schedule_once(lambda: coil.disable(), ms / 1000.0)
             except Exception:       # noqa: BLE001 (a disabled driver in a test machine)
                 pass
         self.lamps.coil_log(8, ms)
@@ -1177,21 +1192,92 @@ class TronOS(CustomCode):
         return bool(self.machine.switch_controller.is_active(self.machine.switches["s_coin_door_open"]))
 
     def _service_back(self):
-        """Coin-door BACK outside the service menu: a service credit [0x0000fc20]."""
-        if not self.in_service:
-            self.credit_model.service_credit()
+        """Coin-door BACK outside the service menu [0x0000fc20]: with the "50V / 20V DISABLED" warning up it
+        takes the warning away (deff_stop(4), sound 0x009); otherwise a service credit."""
+        if self.in_service:
+            return
+        if self._service_confirm:
+            self._service_confirm_close()          # BACK answers no
+            return
+        if self.display.running(POWER_OFF_DEFF):
+            self.deff_stop(POWER_OFF_DEFF)
+            self.sound(POWER_OFF_CANCEL_SOUND)
+            return
+        self.credit_model.service_credit()
 
     def _service_select(self):
-        """Coin-door SELECT in attract mode (no game): the service menu (tron/service.py)."""
-        if not self.game and not self.in_service:
+        """Coin-door SELECT: the service menu (tron/service.py). In attract mode it opens at once. In a game the
+        ROM suspends the game and resumes it after the menu (FUN_0000f9b0 / FUN_0000fa34); here the first
+        SELECT asks "END GAME?" and a second one within SERVICE_CONFIRM_SECONDS ends the game, without its
+        game over (no high scores, match or game audits, as a GAME RESTART), and opens the menu
+        (docs/rom_differences.md). BACK or the timeout leaves the game running."""
+        if self.in_service or self._service_kill:
+            return
+        if not self.game:
             self.machine.modes["tron_service"].start()
+            return
+        if self.game.ending:
+            return
+        if self._service_confirm:
+            self._service_confirm_close()
+            self._service_kill = True
+            self.trace.log("service_end_game")
+            self.game.end_game()
+            return
+        from tron import rom_draw as rd
+        self.media.confirm_show([rd.fit("END GAME?", 64, 11, (15, 12, 8, 2)),
+                                 rd.fit("PRESS 'SELECT' FOR SERVICE MENU", 64, 22, (2, 0)),
+                                 rd.fit("PRESS 'BACK' TO CANCEL", 64, 30, (2, 0))])
+        self._service_confirm = self.machine.clock.schedule_once(
+            lambda: self._service_confirm_close(), SERVICE_CONFIRM_SECONDS)
+
+    def _service_confirm_close(self):
+        if self._service_confirm:
+            self.machine.clock.unschedule(self._service_confirm)
+            self._service_confirm = None
+            self.media.confirm_hide()
 
     def _coin_door_opened(self):
-        """Coin door opened [0x0001ffac]: with adj 41 COINDOOR BALL SAVER, in play, every ball in play is
-        saved: multiball_start(balls in play, 0, 312, 187) [0x0001ff74 / 0x0001ea28]."""
+        """Coin door opened: the door interlock cuts the 50 V and 20 V, so the IO board's power status (RAM
+        0x3727c & 3) is no longer 3 and the power handler FUN_00007bc4 (table 0x040d748c, from FUN_00007c24)
+        runs: event 0x3d, then the "50V / 20V DISABLED" warning, deff 4.
+        Event 0x3d [0x0001ffac]: with adj 41 COINDOOR BALL SAVER, in play, every ball in play is saved:
+        multiball_start(balls in play, 0, 312, 187) [0x0001ff74 / 0x0001ea28]."""
         if self.adj_value(41) == 1 and self.game and not self.state & 0x214:
             self.multiball_start(max(1, self.rom_balls_in_play()), COINDOOR_SAVE_TICKS, COINDOOR_GRACE_TICKS)
             self._coindoor_save = True
+        self._power_off_warning()
+
+    def _coin_door_closed(self):
+        """Coin door closed, power back (FUN_00007c08): event 0x3d, and the warning goes if it is still the
+        running deff."""
+        self._power_off_run += 1
+        if self.display.fg == POWER_OFF_DEFF:
+            self.deff_stop(POWER_OFF_DEFF)
+
+    def _power_off_warning(self):
+        """FUN_00007bc4: deff 4 at priority 247, unless a higher one has the display (the volume display 248;
+        the service menu, deff 3 at 253, which is why nothing shows when the door opens inside the menu).
+        Deff 4 [0x01036f1c] never ends by itself: "50V / 20V DISABLED" blinks five times with sound 0x010,
+        stays lit for 1875 ticks, then the whole screen dims to palette level 6 until the door is closed or
+        BACK is pressed. Its captured frames hold the first part; the dimmed screen is drawn as the ROM draws it."""
+        if self.in_service:
+            return
+        self._power_off_run += 1
+        run = self._power_off_run
+        if self.display.start(POWER_OFF_DEFF, hold=True, media=True):
+            self.after(POWER_OFF_DIM_TICKS, lambda: self._power_off_dim(run))
+
+    def _power_off_dim(self, run):
+        if run != self._power_off_run or self.display.fg != POWER_OFF_DEFF:
+            return
+        from tron import rom_draw as rd
+        level = POWER_OFF_DIM_LEVEL
+        draw = [rd.text("50V / 20V DISABLED", 8, 64, 9, level=level)]
+        draw += [rd.text(t, 2, 64, y, level=level) for t, y in (("CLOSE COIN DOOR", 16),
+                                                               ("OR PULL INTERLOCK SWITCH", 22),
+                                                               ("TO RESTORE POWER", 28))]
+        self.media.deff_draw(POWER_OFF_DEFF, self.display.prio.get(POWER_OFF_DEFF, 0), draw)
 
     def _flipper_launch(self, side):
         """Flipper button with a ball waiting in the shooter lane [0x0002dcc0]: adj 40 FLIPPER BALL LAUNCH
@@ -1335,6 +1421,14 @@ class TronOS(CustomCode):
     # ------------------------------------------------------------------ end of ball (6.1)
 
     def _ball_ending(self, queue=None, **kwargs):
+        if self._service_kill:                       # ended for the service menu: no totals, no bonus
+            self.kill_ball_save()
+            self.kill_mb_save()
+            self.display.clear()
+            self.hook("ball_end")
+            for flipper in self.machine.flippers.values():
+                flipper.disable()
+            return
         queue.wait()
         if self.task_running(0x2b):
             self.after(self.task_ticks_left(0x2b), lambda: self._ball_ending_go(queue))
@@ -1409,7 +1503,7 @@ class TronOS(CustomCode):
 
     def _game_ending(self, queue=None, **kwargs):
         self.state |= 0x18
-        if self._restart:                            # adj 36: straight into the new game
+        if self._restart or self._service_kill:      # adj 36 / the service menu: no game over
             return
         # game-time audit (audits 59-71, by the game's validated play time) and the score-range audits
         # (audits 30-46, one per player) [0x00023774]
@@ -1464,3 +1558,6 @@ class TronOS(CustomCode):
         if self._restart:                            # adj 36: the new game starts at once
             self._restart = False
             self.after(1, lambda: self.machine.events.post("game_start"))
+        if self._service_kill:                       # SELECT twice in the game: the menu opens
+            self._service_kill = False
+            self.after(1, lambda: self.in_service or self.machine.modes["tron_service"].start())

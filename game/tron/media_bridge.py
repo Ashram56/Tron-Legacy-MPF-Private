@@ -93,6 +93,7 @@ class MediaBridge:
         # last deff / text slide stays up until the next one plays, never GMC's base slide below them all
         self.shown = set()                         # deff and text slides playing now
         self.kept = None                           # the last one, stopped but left up until the next plays
+        self.drawn = set()                         # deffs shown by deff_draw (rom_screen) in place of their frames
 
     # ------------------------------------------------------------------ transport
 
@@ -167,8 +168,24 @@ class MediaBridge:
     def deff_stop(self, deff_id):
         info = self.data["deffs"].get(deff_id) if self.data else None
         self.active.discard(deff_id)
-        if info:
+        if deff_id in self.drawn:
+            self.drawn.discard(deff_id)
+            self._remove("rom_screen")
+        elif info:
             self._remove(info["slide"])
+
+    def deff_draw(self, deff_id, priority, draw):
+        """A running deff whose next screen its captured frames do not hold (deff 4 dims after 30 s): the ROM
+        draw list `draw` (tron/rom_draw.py) on the rom_screen slide (tron/service_screen.gd), in place of the
+        deff's frames, until the deff stops."""
+        info = self.data["deffs"].get(deff_id) if self.data else None
+        if not info:
+            return
+        self.drawn.add(deff_id)
+        self.text_show("rom_screen", [], priority, draw=draw)
+        self.shown.discard(info["slide"])
+        self._send("slides_play", {info["slide"]: {"action": "remove", "key": info["slide"], "expire": None}},
+                   need_data=False)
 
     def _played(self, slide):
         self.shown.add(slide)
@@ -304,6 +321,16 @@ class MediaBridge:
         self.shown.discard("service")               # the menu goes away: the attract effects take over
         self._send("slides_play", {"service": {"action": "remove", "key": "service", "expire": None}},
                    need_data=False)
+
+    def confirm_show(self, draw):
+        """The end-the-game question before the service menu opens in a game (tron/os_layer.py, not in the
+        ROM), above every deff."""
+        self.text_show("service_confirm", [], SERVICE_PRIORITY, draw=draw)
+
+    def confirm_hide(self):
+        self.shown.discard("service_confirm")
+        self._send("slides_play", {"service_confirm": {"action": "remove", "key": "service_confirm",
+                                                       "expire": None}}, need_data=False)
 
     # ------------------------------------------------------------------ sounds
 

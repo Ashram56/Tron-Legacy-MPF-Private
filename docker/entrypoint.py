@@ -38,6 +38,13 @@ def hardware(env):
     return hw
 
 
+def machine(env):
+    value = (env.get("TRON_MACHINE") or "").strip().lower()
+    if value not in ("", "pro", "le"):
+        raise SystemExit("TRON_MACHINE must be pro or le, not {!r}".format(value))
+    return value or None
+
+
 def godot_args(env):
     """Godot's command line options for the DMD window, from the environment."""
     args = []
@@ -68,7 +75,8 @@ def mpf_command(env):
     import run
     import toolchain as tc
     return tc.mpf_command() + run.mpf_args(hardware(env), text_ui=truthy(env.get("MPF_TEXT_UI")),
-                                         free_play=truthy(env["FREE_PLAY"]) if env.get("FREE_PLAY") else None)
+                                         free_play=truthy(env["FREE_PLAY"]) if env.get("FREE_PLAY") else None,
+                                         machine=machine(env), fiber_optics=truthy(env.get("TRON_FIBER_OPTICS")))
 
 
 def monitor_command():

@@ -1,0 +1,7 @@
+#config_version=6
+
+# The PuP Pack glue (game/tron_pup/mode.py). Never started: its code hooks the machine when the mode loads.
+mode:
+  code: tron_pup.mode.PupMode
+  priority: 50
+  game_mode: false

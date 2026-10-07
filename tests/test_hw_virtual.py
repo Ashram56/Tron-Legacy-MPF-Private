@@ -16,6 +16,12 @@ class TestHwVirtual(TronTestCase):
     def trough(self):
         return [self.machine.switches[name].state for name in TROUGH]
 
+    def test_machine(self):
+        self.assertEqual("pro", self.machine.variables.get_machine_var("machine_variant"))
+        self.assertEqual("4", self.machine.switches["s_tron_t"].hw_switch.number)      # T-R-O-N standups, reversed
+        self.assertEqual("3", self.machine.coils["c_disc_direction_relay"].hw_driver.number)
+        self.assertEqual("virtual", self.machine.coils["c_drop_target_bank"].config["platform"])
+
     def test_trough_eject_and_shift(self):
         self.assertEqual("<Platform.SmartVirtual>", repr(self.machine.default_platform))
         self.advance_time_and_run(1)
@@ -27,6 +33,18 @@ class TestHwVirtual(TronTestCase):
         self.assertSwitchState("s_shooter_lane", 1)
         self.assertEqual([1, 1, 1, 0], self.trough())                 # the balls rolled down
         self.assertEqual(3, self.machine.ball_devices["bd_trough"].balls)
+
+
+class TestHwVirtualLe(TestHwVirtual):
+    """hw_virtual_le.yaml: the LE's numbers; hw_virtual.yaml (above) is the Pro's."""
+
+    def get_config_file(self):
+        return "../../tests/machine_virtual_le.yaml"
+
+    def test_machine(self):
+        self.assertEqual("le", self.machine.variables.get_machine_var("machine_variant"))
+        self.assertEqual("1", self.machine.switches["s_tron_t"].hw_switch.number)
+        self.assertEqual("3", self.machine.coils["c_drop_target_bank"].hw_driver.number)
 
 
 class TestFreePlayOverlay(TronTestCase):

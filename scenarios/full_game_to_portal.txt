@@ -1,0 +1,331 @@
+# One complete game, 1 player, factory settings, NO pokes: from the Start press to Portal Multiball, using only
+# switch hits, plunges (autoplunge), drains and waits.
+#
+# Order of play (ball 1 is kept alive until the Portal; only multiball extra balls are drained):
+#   FLYNN, GEM, ZUSE, CLU (its last VUK also starts Light Cycle MB, lit by the major shots made so far),
+#   LIGHT CYCLE, QUORRA, RECOGNIZER, DISC (Disc Battle -> Disc MB -> super jackpot), TRON (lit only),
+#   Sea of Simulation, Portal Multiball, then balls 2 and 3 drain and the game ends.
+#
+# Rules that shape the order:
+# - All nine items collected lights the Portal, and the VUK tries the Portal BEFORE Sea of Simulation. So at least
+#   one item must still be uncollected when SOS starts, or the VUK starts the Portal and SOS is never played.
+#   Eight items are lit and collected by their own features; TRON is lit by a TRON completion and collected by
+#   SOS stage 8 (T R O N targets). The eight collected stages are skipped with their (k+1) million bonuses.
+# - CLU, Light Cycle and Quorra start at the VUK only while NOT all nine items are lit (the VUK belongs to the
+#   wizard modes then), so TRON is lit last, just before the SOS start.
+# - Multiballs started at the VUK launch their balls only after the VUK has kicked its ball out (it waits for
+#   the award displays, up to ~16 s), and the multiball ball save (~10 s) starts then: drains wait for that.
+# - Recognizer hits during the Quorra end window (~7 s) go to Quorra's add-a-ball, so the Recognizer waits.
+# - The playfield is only valid (ball save running, drains count) after a "force" switch (ZEN, orbits, loops,
+#   ramps, VUK, CLU lanes, outlanes) or 3 different valid switches; balls 2 and 3 hit one before draining.
+# - Flynn's Arcade (random) is collected at every VUK while lit; the run reaches the Portal whatever it awards.
+#
+# Switches: 1-4 TRON drops, 7 8 48 13 ZUSE, 11 VUK, 12 ZEN, 25 14 28 CLU lanes, 26 27 slings, 30 pop,
+# 34 right ramp, 37 left ramp, 39 right inner loop, 41 disc, 43 left orbit, 44 left spinner (left inner loop),
+# 46 right orbit, 49 50 51 Recognizer 3-bank.
+start 1
+wait 4
+mark ball1_in_play
+hit 30
+wait 3
+hit 26
+wait 3
+
+# ---- FLYNN: ZEN starts Find Flynn, the roving arrow starts on the left orbit
+mark flynn_lit
+hit 12
+wait 1
+hit 43
+wait 4
+mark flynn_collected
+hit 27
+wait 4
+hit 26
+wait 4
+
+# ---- GEM: 3 right inner loops start the hurry-up, the 4th collects
+hit 39
+wait 3
+hit 39
+wait 3
+hit 39
+wait 4
+mark gem_lit
+hit 39
+wait 3
+mark gem_collected
+hit 27
+wait 4
+hit 30
+wait 4
+
+# ---- ZUSE: Z U S E starts fast scoring, Z U S E again collects
+hit 7
+wait 2
+hit 8
+wait 2
+hit 48
+wait 2
+hit 13
+wait 5
+mark zuse_lit
+hit 7
+wait 1.5
+hit 8
+wait 1.5
+hit 48
+wait 1.5
+hit 13
+wait 3
+mark zuse_collected
+hit 26
+wait 3
+hit 27
+wait 3
+
+# ---- CLU: C L U lanes light the hurry-up at the VUK; left orbit, left inner loop, right orbit, VUK collect
+hit 25
+wait 1
+hit 14
+wait 1
+hit 28
+wait 3
+hit 11
+wait 12
+mark clu_lit
+hit 43
+wait 4
+hit 44
+wait 4
+hit 46
+wait 4
+# this VUK collects the last CLU shot and starts Light Cycle MB (lit by 4 different major shots so far)
+hit 11
+wait 18
+mark clu_collected
+
+# ---- LIGHT CYCLE MB: jackpot left ramp, super left inner loop, double super right inner loop
+mark light_cycle_lit
+hit 37
+wait 2
+hit 44
+wait 2
+hit 39
+wait 3
+mark light_cycle_collected
+wait 4
+hit 30
+wait 4
+hit 26
+wait 7
+drain
+wait 4
+mark light_cycle_ended
+hit 27
+wait 3
+
+# ---- QUORRA MB: 5 left inner loops light it at the VUK; jackpot left inner loop, super right inner loop
+hit 44
+wait 2.5
+hit 44
+wait 2.5
+hit 44
+wait 2.5
+hit 44
+wait 2.5
+hit 44
+wait 3
+hit 11
+wait 20
+mark quorra_lit
+hit 44
+wait 3
+hit 39
+wait 3
+mark quorra_collected
+wait 4
+hit 26
+wait 4
+hit 30
+wait 7
+drain
+wait 4
+mark quorra_ended
+wait 4
+hit 27
+wait 6
+
+# ---- RECOGNIZER: 5 counts on the 3-bank (the moving lit target counts 2) collect it and light Disc Battle
+hit 49
+wait 1.5
+hit 50
+wait 1.5
+hit 51
+wait 1.5
+mark recognizer_lit
+hit 49
+wait 1.5
+hit 50
+wait 1.5
+hit 51
+wait 3
+mark recognizer_collected
+
+# ---- DISC: disc hits (2.5 s apart, the disc ignores a hit within 2 s) count Disc Battle down and start Disc MB
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+mark disc_lit
+wait 4
+# blue shots build the jackpot, 6 disc jackpots, 3 Recognizer jackpots, then the disc super jackpot collects
+hit 37
+wait 2
+hit 39
+wait 2
+hit 34
+wait 2
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 41
+wait 2.5
+hit 50
+wait 1.5
+hit 49
+wait 1.5
+hit 51
+wait 1.5
+hit 50
+wait 2
+hit 41
+wait 4
+mark disc_collected
+wait 4
+hit 30
+wait 6
+drain
+wait 2
+drain
+wait 6
+mark disc_ended
+hit 26
+wait 4
+
+# ---- TRON: the ZEN charge from the Find Flynn start completes TRON on the first new letter; the TRON award
+# that starts lights the TRON item, which completes the nine lit items (Sea of Simulation lit)
+hit 1
+wait 1
+hit 2
+wait 1
+hit 3
+wait 1
+hit 4
+wait 5
+mark tron_lit
+mark all_items_lit
+
+# ---- SEA OF SIMULATION: the VUK starts it; stages 0-7 are collected already (skip bonuses), stage 8 needs
+# the T R O N targets
+hit 11
+wait 6
+mark sos_started
+wait 6
+hit 27
+wait 6
+hit 26
+wait 6
+hit 30
+wait 6
+hit 1
+wait 1.5
+hit 2
+wait 1.5
+hit 3
+wait 1.5
+hit 4
+wait 3
+mark tron_collected
+mark sos_completed
+mark all_items_collected
+wait 5
+
+# ---- PORTAL MULTIBALL: the VUK starts the 4-ball Portal; a round of shots (each one a Portal award)
+hit 11
+wait 2
+mark portal_started
+wait 18
+hit 43
+wait 3
+hit 37
+wait 3
+hit 44
+wait 3
+hit 39
+wait 3
+hit 34
+wait 3
+hit 46
+wait 3
+hit 43
+wait 3
+hit 37
+wait 3
+hit 44
+wait 3
+hit 39
+wait 3
+mark portal_jackpots
+wait 5
+drain
+wait 3
+drain
+wait 3
+drain
+wait 10
+mark portal_ended
+drain left
+wait 20
+
+# ---- balls 2 and 3: plunged, a few hits, then lost (a loop / orbit shot makes the playfield valid first)
+mark ball2
+hit 30
+wait 2
+hit 39
+wait 4
+hit 26
+wait 6
+drain left
+wait 20
+mark ball3
+hit 30
+wait 2
+hit 43
+wait 4
+hit 27
+wait 6
+drain right
+# bonus, high-score initials entry (left to time out), match, game over
+wait 90
+mark game_over

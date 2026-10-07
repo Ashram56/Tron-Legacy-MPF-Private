@@ -15,15 +15,15 @@
 set -euo pipefail
 
 # Run from a clone, it sets up that clone. Run on its own (fetched with curl, README "Install"), it first
-# clones the repository into $TRON_DIR (default ~/Tron-Legacy-MPF), branch $TRON_BRANCH (default main),
+# clones the repository into $TRON_DIR (default ~/Tron-Legacy-MPF-PuP), branch $TRON_BRANCH (default main),
 # from $TRON_REPO; an existing clone there gets a git pull.
 SRC="${BASH_SOURCE[0]:-}"
 if [ -n "$SRC" ] && [ -f "$(dirname "$SRC")/../setup.py" ]; then
     ROOT="$(cd "$(dirname "$SRC")/../.." && pwd)" CLONE=0
 else
-    ROOT="${TRON_DIR:-$HOME/Tron-Legacy-MPF}" CLONE=1
+    ROOT="${TRON_DIR:-$HOME/Tron-Legacy-MPF-PuP}" CLONE=1
 fi
-REPO_URL="${TRON_REPO:-https://github.com/Ashram56/Tron-Legacy-MPF.git}"
+REPO_URL="${TRON_REPO:-https://github.com/Ashram56/Tron-Legacy-MPF-PuP.git}"
 REPO_BRANCH="${TRON_BRANCH:-main}"
 HERE="$ROOT/scripts/install"
 OS_RELEASE="${TRON_OS_RELEASE:-/etc/os-release}"     # tests point this at a fake one
@@ -60,6 +60,74 @@ run() {
     if [ "$DRY" = 0 ]; then "$@"; fi
 }
 
+# ------------------------------------------------------------------ GitHub access (private repositories)
+# The game repository or its assets submodule may be private: git then needs a GitHub token instead of a
+# password. Give it as TRON_GITHUB_TOKEN (or GITHUB_TOKEN / GH_TOKEN), or paste it when asked. It is used for
+# this run only (git's url.insteadOf in the environment, inherited by setup.py), and handed to git's
+# credential helper, if one is set up (the macOS keychain, for example), so later `git pull`s work too.
+ASSETS_URL="${TRON_ASSETS_REPO:-https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git}"
+PUP_URL="${TRON_PUP_REPO:-https://github.com/Ashram56/Tron-LE-PuP-Pack.git}"   # the pup_pack submodule (PuP fork)
+TOKEN="${TRON_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+
+public_repo() { GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true git -c credential.helper= ls-remote "$1" HEAD >/dev/null 2>&1; }
+
+github_auth() {
+    AUTH_DONE=1
+    say "GitHub access"
+    if [ "$DRY" = 1 ]; then
+        note "(dry run) a private repository asks for a GitHub token here$([ -n "$TOKEN" ] && echo ': using the one given')"
+        return
+    fi
+    # only the repositories nobody can read without a login need the token: a token that cannot read a public
+    # repository (a fine-grained one for other repositories, an expired one) would make git fail on it
+    local url private=()
+    for url in "$REPO_URL" "$ASSETS_URL" "$PUP_URL"; do public_repo "$url" || private+=("$url"); done
+    if [ ${#private[@]} = 0 ]; then
+        note "the repositories are public: no token needed"
+        return
+    fi
+    if [ -z "$TOKEN" ]; then
+        local readable=1
+        for url in "${private[@]}"; do GIT_TERMINAL_PROMPT=0 git ls-remote "$url" HEAD >/dev/null 2>&1 || readable=0; done
+        if [ "$readable" = 1 ]; then
+            note "a private repository, readable with the GitHub credentials git already has"
+            return
+        fi
+        [ "$YES" = 0 ] && [ -r /dev/tty ] || die "a repository is private: set TRON_GITHUB_TOKEN to a GitHub token that can read it"
+        note "Private: ${private[*]}"
+        note "Paste a GitHub token that can read it (github.com > Settings > Developer settings > Personal access"
+        note "tokens; a fine-grained token with Contents: read-only on these repositories)."
+        printf '    token (not shown): ' >/dev/tty
+        IFS= read -rs TOKEN </dev/tty
+        printf '\n' >/dev/tty
+    fi
+    # a token copied from a text editor can carry spaces or a line break; GitHub tokens have none
+    TOKEN="$(printf '%s' "$TOKEN" | tr -d '[:space:]')"
+    [ -n "$TOKEN" ] || die "no token given"
+    local prefix=unknown
+    case "$TOKEN" in github_pat_*) prefix=github_pat_ ;; gh?_*) prefix="${TOKEN:0:4}" ;; esac
+    note "token: ${#TOKEN} characters, type $prefix (a fine-grained token is about 93, a classic one 40)"
+    # the token goes into the private repositories' URLs only (git's url.insteadOf, inherited by setup.py)
+    local i=0
+    for url in "${private[@]}"; do
+        export "GIT_CONFIG_KEY_$i=url.https://x-access-token:${TOKEN}@${url#https://}.insteadOf" "GIT_CONFIG_VALUE_$i=$url"
+        i=$((i + 1))
+    done
+    export GIT_CONFIG_COUNT=$i
+    for url in "${private[@]}"; do
+        GIT_TERMINAL_PROMPT=0 git ls-remote "$url" HEAD >/dev/null 2>&1 \
+            || die "the GitHub token cannot read $url (check its repository access and expiry)"
+    done
+    printf 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=%s\n\n' "$TOKEN" \
+        | git credential approve 2>/dev/null || true
+    note "token accepted"
+}
+
+# first thing, so a token is asked before the long installs (later, once git is installed, if it is missing)
+AUTH_DONE=0
+if command -v git >/dev/null 2>&1; then github_auth; fi
+
+
 if [ "$(id -u)" = 0 ]; then
     SUDO=()
 else
@@ -93,6 +161,16 @@ case "$(uname -m)" in
     aarch64|arm64) ARCH=aarch64 ;;
     *) if [ "$DRY" = 1 ]; then ARCH=x86_64; else die "unsupported CPU $(uname -m): x86_64 or arm64 only"; fi ;;
 esac
+
+# MPF Monitor needs PyQt6. Its arm64 wheels need glibc 2.39 from 6.8 on, so scripts/toolchain.py takes 6.7 on
+# Linux arm64, whose wheels need glibc 2.28 (JetPack 5: 2.31, JetPack 6: 2.35). Older than that, pip falls back
+# to a source build that fails, so the monitor is left out
+GLIBC="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{ print $2 }' || true)"
+if [ "$MONITOR" = 1 ] && [ "$ARCH" = aarch64 ] && [ -n "$GLIBC" ] \
+   && [ "$(printf '%s\n' 2.28 "$GLIBC" | sort -V | head -n 1)" != 2.28 ]; then
+    MONITOR=0
+    MONITOR_SKIPPED="glibc $GLIBC < 2.28 on arm64: PyQt6 has no wheel for it"
+fi
 
 # ------------------------------------------------------------------ packages per family
 
@@ -170,6 +248,17 @@ install_pkgs() {    # install the packages of "$@" that are missing
         if [ "$APT_UPDATED" = 0 ]; then root apt-get update -qq; APT_UPDATED=1; fi
         local i
         for i in "${!missing[@]}"; do missing[i]="$(apt_name "${missing[i]}")"; done
+        # libdecor (Wayland window decorations, optional for Godot) is not in Ubuntu 20.04 / JetPack 5
+        for i in "${!missing[@]}"; do
+            case "${missing[i]}" in libdecor-0-0*)
+                if have_tool apt-cache && ! apt_known "${missing[i]}"; then
+                    note "${missing[i]} is not in this release: skipped (Godot only uses it on Wayland)"
+                    unset 'missing[i]'
+                fi ;;
+            esac
+        done
+        missing=("${missing[@]}")
+        [ ${#missing[@]} -gt 0 ] || return 0
     fi
     note "missing: ${missing[*]}"
     if [ "$DRY" = 0 ] && [ "$YES" = 0 ] && [ -t 0 ]; then
@@ -216,8 +305,15 @@ apt_has_python311() {   # a final (not release candidate) python3.11 in the conf
 deadsnakes() {
     say "Python 3.11 from the deadsnakes PPA (Ubuntu)"
     install_pkgs software-properties-common
-    root add-apt-repository -y ppa:deadsnakes/ppa
+    # set -e is off in a function called with ||: check each step, or Ubuntu 22.04's own python3.11
+    # (3.11.0 release candidate) gets installed when the PPA could not be added
+    root add-apt-repository -y ppa:deadsnakes/ppa || return 1
     APT_UPDATED=0
+    if [ "$DRY" = 0 ]; then
+        root apt-get update -qq || return 1
+        APT_UPDATED=1
+        apt_has_python311 || return 1
+    fi
     install_pkgs "${PKG_PY[@]}"
 }
 
@@ -295,12 +391,23 @@ if [ -z "$PY" ]; then
     note "Python: $PY"
 fi
 
+[ "$AUTH_DONE" = 1 ] || github_auth    # git was missing at the start
+
 # ------------------------------------------------------------------ repository (run on its own: clone it)
 
 if [ "$CLONE" = 1 ]; then
     say "Repository: $REPO_URL ($REPO_BRANCH) in $ROOT"
     if [ -d "$ROOT/.git" ]; then
-        run git -C "$ROOT" pull --ff-only
+        # an existing clone: update its branch, or move to $REPO_BRANCH when that branch is gone from GitHub
+        # (a deleted pull-request branch) or none is checked out
+        CUR="$(git -C "$ROOT" symbolic-ref --short -q HEAD 2>/dev/null || true)"
+        if [ -n "$CUR" ] && git -C "$ROOT" ls-remote --exit-code --heads origin "$CUR" >/dev/null 2>&1; then
+            run git -C "$ROOT" pull --ff-only
+        else
+            note "branch '${CUR:-none}' is no longer on GitHub: switching to $REPO_BRANCH"
+            run git -C "$ROOT" fetch --prune origin
+            run git -C "$ROOT" checkout -B "$REPO_BRANCH" --track "origin/$REPO_BRANCH"
+        fi
     else
         run git clone --branch "$REPO_BRANCH" "$REPO_URL" "$ROOT"
     fi
@@ -310,6 +417,7 @@ fi
 
 if [ "$SETUP" = 1 ]; then
     say "Workspace (scripts/setup.py)"
+    [ -z "${MONITOR_SKIPPED:-}" ] || note "MPF Monitor left out: $MONITOR_SKIPPED"
     ARGS=()
     [ "$MONITOR" = 1 ] || ARGS+=(--no-monitor)
     [ "$DRY" = 1 ] && ARGS+=(--dry-run)
@@ -346,6 +454,7 @@ if [ "$PROC" = 1 ]; then
     fi
 fi
 
+[ ! -f /etc/nv_tegra_release ] || "$HERE/install_jetson_hwdec.sh" $([ "$DRY" = 1 ] && echo --dry-run) || true  # PuP: Jetson decoder
 say "Done$([ "$DRY" = 1 ] && echo ' (dry run: nothing was changed)')"
 if [ "$SETUP" = 1 ]; then
     note "In $ROOT:"

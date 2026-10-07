@@ -17,4 +17,10 @@ game/fonts/
 /game/monitor/logs/
 /game/monitor/settings.ini
 /game/monitor/settings.ini.lock
+# PuP Pack: converted media (scripts/gen_pup.py) and the per-cabinet screen settings
+/pup_media/
+game/pup.local.cfg
+game/addons/native_video/
+game/addons/gde_gozen/
 .cache/
+game/fonts_ttf/*.import

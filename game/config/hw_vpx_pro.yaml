@@ -1,0 +1,8 @@
+#config_version=6
+
+# Visual Pinball X with the Pro's IO assignments, for a table that models the Pro (the VPW table is the LE: hw_vpx.yaml).
+#   cd game && ../.venv/bin/mpf game . -c config,hw_vpx_pro   (or: python scripts/run.py --hw vpx --machine pro)
+
+config:
+  - hw_vpx.yaml
+  - machine_pro.yaml

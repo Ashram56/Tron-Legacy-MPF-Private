@@ -1,0 +1,6 @@
+#config_version=6
+
+# PuP Pack (game/pup.cfg, docs/pup.md): included by config.yaml. Kept in its own file so an upstream sync of
+# config.yaml only has to keep the one include line.
+modes:
+  - pup

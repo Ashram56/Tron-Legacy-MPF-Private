@@ -22,6 +22,7 @@ import csv
 import os
 import re
 
+from tron.hw_numbers import pro_companion_flashers, rom_numbers
 from tron.os_layer import TICK
 
 LAMP_COUNT = 80
@@ -231,19 +232,21 @@ class Lamps:
         self.names = {}             # MPF light name -> lamp number (lamp matrix only)
         self.lights = {}            # lamp number -> MPF light
         self.groups = {}            # light tag (rom_group_N) -> lamp numbers
+        rom_lamps = rom_numbers(self.machine, "lights")      # the ROM's lamp numbers, on any platform or machine
         for light in getattr(self.machine, "lights", {}).values():
-            num = str(light.config.get("number", ""))
-            if num.isdigit():
-                self.names[light.name] = int(num)
-                self.lights[int(num)] = light
+            num = rom_lamps.get(light.name)
+            if num is not None:
+                self.names[light.name] = num
+                self.lights[num] = light
                 for tag in light.tags:
-                    self.groups.setdefault(tag, []).append(int(num))
+                    self.groups.setdefault(tag, []).append(num)
         self.coil_numbers = {}
         self._coil_until = {}       # flasher coil -> end of its current pulse
+        rom_coils = rom_numbers(self.machine, "coils")
         for coil in getattr(self.machine, "coils", {}).values():
-            num = str(coil.config.get("number", ""))
-            if num.isdigit():
-                self.coil_numbers[coil.name] = int(num)
+            if coil.name in rom_coils:
+                self.coil_numbers[coil.name] = rom_coils[coil.name]
+        pro_companion_flashers(self.machine)
         self._start_flash()
 
     # ------------------------------------------------------------------ game image (ROM names)

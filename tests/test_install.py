@@ -34,13 +34,67 @@ def sh(args, env=None):
 
 @unittest.skipUnless(BASH and POSIX, "needs bash on Linux or macOS")
 class TestShellScripts(unittest.TestCase):
-    SCRIPTS = ["install_prereqs_linux.sh", "install_prereqs_macos.sh", "build_pinproc.sh"]
+    SCRIPTS = ["install_prereqs_linux.sh", "install_prereqs_macos.sh", "build_pinproc.sh", "install_jetson_hwdec.sh"]
 
     def test_syntax(self):
         for name in self.SCRIPTS + [os.path.join("..", "..", "docker", "tron.sh")]:
             with self.subTest(script=name):
                 r = sh(["-n", os.path.join(INSTALL, name)])
                 self.assertEqual(0, r.returncode, r.stderr)
+
+    def test_jetson_hwdec_skips_other_machines(self):
+        if os.path.exists("/etc/nv_tegra_release"):
+            self.skipTest("on a Jetson")
+        r = sh([os.path.join(INSTALL, "install_jetson_hwdec.sh"), "--dry-run"])
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertIn("not an NVIDIA Jetson", r.stdout)
+
+    def test_jetson_hwdec_plan_on_a_stripped_xavier(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        release = os.path.join(tmp, "nv_tegra_release")
+        with open(release, "w") as f:
+            f.write("# R35 (release), REVISION: 4.1, GCID: 1, BOARD: t186ref, EABI: aarch64\n")
+        with open(os.path.join(tmp, "model"), "w") as f:
+            f.write("NVIDIA Jetson Xavier NX Developer Kit\0")
+        with open(os.path.join(tmp, "compatible"), "w") as f:
+            f.write("nvidia,p3509-0000+p3668-0001\0nvidia,tegra194\0")
+        r = sh([os.path.join(INSTALL, "install_jetson_hwdec.sh"), "--dry-run"],
+               env={"TRON_ARCH": "aarch64", "TRON_NV_RELEASE": release, "TRON_DEVICE_TREE": tmp})
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("SoC t194, NVIDIA apt release r35.4", r.stdout)
+        if os.path.exists("/usr/src/jetson_multimedia_api/include/NvVideoDecoder.h"):
+            return  # a real Jetson: nothing is missing
+        self.assertIn("nvidia-l4t-jetson-multimedia-api", r.stdout)
+        self.assertIn("nvidia-l4t-3d-core", r.stdout)
+        # EGL lives in tegra-egl, which the 3d-core package does not add to the loader path
+        self.assertIn("tegra-egl/libEGL_nvidia.so.0", r.stdout)
+        self.assertIn("aarch64-linux-gnu_EGL.conf: /usr/lib/aarch64-linux-gnu/tegra-egl", r.stdout)
+        self.assertIn("scripts/build.sh --no-stubs --install", r.stdout)
+
+    def test_jetson_hwdec_plan_on_an_orin(self):
+        """JetPack 6 (AGX Orin, R36.4.3): t234 repo, nvidia/ library folder, installs pinned to 36.4.3."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        release = os.path.join(tmp, "nv_tegra_release")
+        with open(release, "w") as f:
+            f.write("# R36 (release), REVISION: 4.3, GCID: 38968081, BOARD: generic, EABI: aarch64, "
+                    "DATE: Wed Jan 8 01:49:37 UTC 2025\n# KERNEL_VARIANT: oot\nTARGET_USERSPACE_LIB_DIR=nvidia\n")
+        with open(os.path.join(tmp, "model"), "w") as f:
+            f.write("NVIDIA Jetson AGX Orin Developer Kit\0")
+        with open(os.path.join(tmp, "compatible"), "w") as f:
+            f.write("nvidia,p3737-0000+p3701-0005\0nvidia,p3701-0005\0nvidia,tegra234\0")
+        r = sh([os.path.join(INSTALL, "install_jetson_hwdec.sh"), "--dry-run"],
+               env={"TRON_ARCH": "aarch64", "TRON_NV_RELEASE": release, "TRON_DEVICE_TREE": tmp,
+                    "XDG_CACHE_HOME": tmp})
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("SoC t234, NVIDIA apt release r36.4", r.stdout)
+        self.assertIn("l4t-pin.pref: nvidia-l4t-* 36.4.3-*", r.stdout)
+        self.assertFalse(os.path.exists(os.path.join(tmp, "tron-legacy-mpf", "l4t-pin.pref")))  # dry run
+        if os.path.exists("/usr/src/jetson_multimedia_api/include/NvVideoDecoder.h"):
+            return  # a real Jetson: nothing is missing
+        self.assertIn("/usr/lib/aarch64-linux-gnu/nvidia/libnvv4l2.so", r.stdout)
+        self.assertIn("Dir::Etc::Preferences=", r.stdout)
 
     def os_release(self, text):
         f = tempfile.NamedTemporaryFile("w", suffix=".os-release", delete=False)
@@ -110,14 +164,76 @@ class TestShellScripts(unittest.TestCase):
                 self.assertEqual(0, r.returncode, r.stdout + r.stderr)
                 self.assertIn("git clone --branch some-branch https://example.invalid/tron.git " + target, r.stdout)
                 self.assertIn(os.path.join(target, "scripts", "setup.py"), r.stdout)
-                os.makedirs(os.path.join(target, ".git"), exist_ok=True)      # already cloned: pull
+                os.makedirs(os.path.join(target, ".git"), exist_ok=True)      # no branch: switch to TRON_BRANCH
                 r = sh([alone, "--dry-run"], env=env)
-                self.assertIn("git -C {} pull --ff-only".format(target), r.stdout)
+                self.assertIn("git -C {} checkout -B some-branch --track origin/some-branch".format(target), r.stdout)
                 shutil.rmtree(os.path.join(target, ".git"))
                 r = sh([os.path.join(INSTALL, name), "--dry-run"], env=env)
                 self.assertEqual(0, r.returncode, r.stdout + r.stderr)
                 self.assertNotIn("git clone", r.stdout)
                 self.assertIn(os.path.join(ROOT, "scripts", "setup.py"), r.stdout)
+
+    def test_existing_clone_branch_gone(self):
+        """An existing clone is pulled while its branch is on the remote, and moved to TRON_BRANCH once that
+        branch is deleted there (a merged pull request's branch), instead of failing."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        origin, target = os.path.join(tmp, "origin"), os.path.join(tmp, "tron")
+
+        def git(*a, cwd=tmp):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"]
+                           + list(a), cwd=cwd, check=True, capture_output=True)
+        git("init", origin)
+        git("commit", "--allow-empty", "-m", "one", cwd=origin)
+        git("branch", "feature", cwd=origin)
+        git("clone", "--branch", "feature", origin, target)
+        for name in ("install_prereqs_linux.sh", "install_prereqs_macos.sh"):
+            with self.subTest(script=name):
+                alone = os.path.join(tmp, name)
+                shutil.copy(os.path.join(INSTALL, name), alone)
+                env = {"TRON_OS_RELEASE": self.os_release("ID=debian\n"), "DISPLAY": ":0", "TRON_DIR": target,
+                       "TRON_REPO": origin}
+                r = sh([alone, "--dry-run"], env=env)
+                self.assertIn("git -C {} pull --ff-only".format(target), r.stdout)
+        git("branch", "-D", "feature", cwd=origin)
+        for name in ("install_prereqs_linux.sh", "install_prereqs_macos.sh"):
+            with self.subTest(script=name, branch="gone"):
+                r = sh([os.path.join(tmp, name), "--dry-run"], env=env)
+                self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+                self.assertIn("'feature' is no longer on GitHub", r.stdout)
+                self.assertIn("git -C {} checkout -B main --track origin/main".format(target), r.stdout)
+
+    def test_github_auth(self):
+        """The token step (run first, so a private repository asks for a token before the long installs): public
+        repositories need none, even with a token given; a token that cannot read a private repository stops the install with a clear message, and
+        is never printed."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        repo = os.path.join(tmp, "repo")
+        subprocess.run(["git", "-c", "init.defaultBranch=main", "init", "-q", repo], check=True)
+        subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "--allow-empty", "-m", "one"], check=True)
+        for name in ("install_prereqs_linux.sh", "install_prereqs_macos.sh"):
+            script = open(os.path.join(INSTALL, name), encoding="utf-8").read()
+            funcs = script[script.index("say() {"):script.index("AUTH_DONE=0")]
+            public = {"TRON_REPO": repo, "TRON_ASSETS_REPO": repo, "TRON_PUP_REPO": repo}
+            for env, code, out in ((public, 0, "public: no token needed"),
+                                   # a token from the environment that cannot read anything is not used
+                                   (dict(public, GITHUB_TOKEN="secret-token-123"), 0, "public: no token needed"),
+                                   (dict(public, TRON_ASSETS_REPO=os.path.join(tmp, "missing"),
+                                         TRON_GITHUB_TOKEN="secret-token-123"), 1, "cannot read " + tmp)):
+                with self.subTest(script=name, env=sorted(env)):
+                    prog = 'DRY=0 YES=1; REPO_URL="$TRON_REPO"\n' + funcs + "github_auth\n"
+                    r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=60,
+                                       env=dict({k: v for k, v in os.environ.items()
+                                                 if k not in ("GITHUB_TOKEN", "GH_TOKEN", "TRON_GITHUB_TOKEN")},
+                                                HOME=tmp, **env))
+                    self.assertEqual(code, r.returncode, r.stdout + r.stderr)
+                    self.assertIn(out, r.stdout + r.stderr)
+                    self.assertNotIn("secret-token-123", r.stdout + r.stderr)
+        r = sh([os.path.join(INSTALL, "install_prereqs_linux.sh"), "--dry-run"],
+               env={"TRON_OS_RELEASE": self.os_release("ID=debian\n"), "DISPLAY": ":0"})
+        self.assertIn("GitHub access", r.stdout)
 
     def test_build_pinproc_plan(self):
         r = sh([os.path.join(INSTALL, "build_pinproc.sh"), "--dry-run", "--python", sys.executable,

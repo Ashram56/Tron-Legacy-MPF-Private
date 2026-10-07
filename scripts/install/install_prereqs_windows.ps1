@@ -43,12 +43,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 # Run from a clone, it sets up that clone. Run on its own (irm ... | iex, README "Install"), it first clones the
-# repository into $env:TRON_DIR (default ~\Tron-Legacy-MPF, outside OneDrive), branch $env:TRON_BRANCH (default
+# repository into $env:TRON_DIR (default ~\Tron-Legacy-MPF-PuP, outside OneDrive), branch $env:TRON_BRANCH (default
 # main), from $env:TRON_REPO; an existing clone gets a git pull.
 $Clone = -not ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot '..\setup.py')))
 $Root = if (-not $Clone) { Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
-        elseif ($env:TRON_DIR) { $env:TRON_DIR } else { Join-Path $HOME 'Tron-Legacy-MPF' }
-$RepoUrl = if ($env:TRON_REPO) { $env:TRON_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-MPF.git' }
+        elseif ($env:TRON_DIR) { $env:TRON_DIR } else { Join-Path $HOME 'Tron-Legacy-MPF-PuP' }
+$RepoUrl = if ($env:TRON_REPO) { $env:TRON_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-MPF-PuP.git' }
 $RepoBranch = if ($env:TRON_BRANCH) { $env:TRON_BRANCH } else { 'main' }
 
 # The last Python 3.11 release with Windows installers (later 3.11 releases are source-only security fixes)
@@ -128,6 +128,75 @@ function Find-Git {
     return $null
 }
 
+# The game repository or its assets submodule may be private: git then needs a GitHub token instead of a
+# password. Give it as $env:TRON_GITHUB_TOKEN (or GITHUB_TOKEN / GH_TOKEN), or paste it when asked. It is used
+# for this run only (git's url.insteadOf in the environment, inherited by setup.py), and handed to git's
+# credential helper (Git Credential Manager), so later `git pull`s work too.
+$AssetsUrl = if ($env:TRON_ASSETS_REPO) { $env:TRON_ASSETS_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git' }
+# the pup_pack submodule (PuP fork)
+$PupUrl = if ($env:TRON_PUP_REPO) { $env:TRON_PUP_REPO } else { 'https://github.com/Ashram56/Tron-LE-PuP-Pack.git' }
+
+function Test-RepoAccess([string]$GitExe, [string]$Url, [switch]$Anonymous) {
+    # no prompt of any kind: GIT_TERMINAL_PROMPT for git's own, GCM_INTERACTIVE for Git Credential Manager's
+    # login window (it asks for a user and password, which GitHub then refuses for git)
+    # Windows PowerShell 5.1 turns a redirected native command's stderr ("fatal: could not read Username") into
+    # an error record, which 'Stop' makes fatal: only the exit code counts here
+    $ErrorActionPreference = 'Continue'
+    $env:GIT_TERMINAL_PROMPT = '0'
+    $env:GCM_INTERACTIVE = 'never'
+    try {
+        if ($Anonymous) { & $GitExe -c credential.helper= ls-remote $Url HEAD *> $null }
+        else { & $GitExe ls-remote $Url HEAD *> $null }
+        return ($LASTEXITCODE -eq 0)
+    } finally { Remove-Item Env:GIT_TERMINAL_PROMPT, Env:GCM_INTERACTIVE -ErrorAction SilentlyContinue }
+}
+
+function Invoke-GitHubAuth([string]$GitExe) {
+    Write-Step 'GitHub access'
+    $token = @($env:TRON_GITHUB_TOKEN, $env:GITHUB_TOKEN, $env:GH_TOKEN) | Where-Object { $_ } | Select-Object -First 1
+    if ($DryRun) {
+        Write-Note '(dry run) a private repository asks for a GitHub token here'
+        return
+    }
+    # only the repositories nobody can read without a login need the token: a token that cannot read a public
+    # repository (a fine-grained one for other repositories, an expired one) would make git fail on it
+    $private = @(@($RepoUrl, $AssetsUrl, $PupUrl) | Where-Object { -not (Test-RepoAccess $GitExe $_ -Anonymous) })
+    if ($private.Count -eq 0) {
+        Write-Note 'the repositories are public: no token needed'
+        return
+    }
+    if (-not $token) {
+        if (-not ($private | Where-Object { -not (Test-RepoAccess $GitExe $_) })) {
+            Write-Note 'a private repository, readable with the GitHub credentials git already has'
+            return
+        }
+        if ($Yes) { throw 'a repository is private: set $env:TRON_GITHUB_TOKEN to a GitHub token that can read it' }
+        Write-Note "Private: $($private -join ' ')"
+        Write-Note 'Paste a GitHub token that can read it (github.com > Settings > Developer settings > Personal access'
+        Write-Note 'tokens; a fine-grained token with Contents: read-only on these repositories).'
+        $secure = Read-Host '    token (not shown)' -AsSecureString
+        $token = [System.Net.NetworkCredential]::new('', $secure).Password
+    }
+    # a token copied from a text editor can carry spaces or a line break; GitHub tokens have none
+    $token = ($token -replace '\s', '')
+    if (-not $token) { throw 'no token given' }
+    $prefix = if ($token -match '^(github_pat_|gh[pousr]_)') { $Matches[1] } else { 'unknown' }
+    Write-Note "token: $($token.Length) characters, type $prefix (a fine-grained token is about 93, a classic one 40)"
+    # the token goes into the private repositories' URLs only (git's url.insteadOf, inherited by setup.py)
+    for ($i = 0; $i -lt $private.Count; $i++) {
+        Set-Item "Env:GIT_CONFIG_KEY_$i" ("url.https://x-access-token:$token@" + $private[$i].Substring(8) + '.insteadOf')
+        Set-Item "Env:GIT_CONFIG_VALUE_$i" $private[$i]
+    }
+    $env:GIT_CONFIG_COUNT = "$($private.Count)"
+    foreach ($url in $private) {
+        if (-not (Test-RepoAccess $GitExe $url)) {
+            throw "the GitHub token cannot read $url (check its repository access and expiry)"
+        }
+    }
+    "protocol=https`nhost=github.com`nusername=x-access-token`npassword=$token`n" | & $GitExe credential approve 2>$null
+    Write-Note 'token accepted'
+}
+
 function Test-VcRuntime {
     foreach ($key in @("HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\$VcArch",
                        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\$VcArch")) {
@@ -164,6 +233,14 @@ try {
         $env:Path = "$env:ProgramFiles\Git\cmd;$env:Path"
         if (-not $DryRun -and -not (Find-Git)) { throw 'Git is still missing after the install' }
     }
+    $authGit = Find-Git
+    # setup.py runs `git` from the PATH (to fetch the submodules): a Git found only at its install folder is
+    # put on this session's PATH
+    if ($authGit -and -not (Get-Command git -ErrorAction SilentlyContinue)) {
+        $env:Path = (Split-Path -Parent $authGit) + ';' + $env:Path
+        Write-Note "Git added to this session's PATH: $(Split-Path -Parent $authGit)"
+    }
+    Invoke-GitHubAuth $(if ($authGit) { $authGit } else { 'git' })
 
     # ---------------------------------------------------------------- Python 3.11
     Write-Step 'Python 3.11'
@@ -270,7 +347,24 @@ try {
         Write-Step "Repository: $RepoUrl ($RepoBranch) in $Root"
         $gitExe = Find-Git
         if (-not $gitExe) { $gitExe = 'git' }
-        if (Test-Path (Join-Path $Root '.git')) { Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only') }
+        if (Test-Path (Join-Path $Root '.git')) {
+            # an existing clone: update its branch, or move to $RepoBranch when that branch is gone from GitHub
+            # (a deleted pull-request branch) or none is checked out
+            $cur = (& $gitExe -C $Root symbolic-ref --short -q HEAD 2>$null)
+            $onRemote = $false
+            if ($cur) {
+                $ErrorActionPreference = 'Continue'     # stderr is not an error here (see Test-RepoAccess)
+                & $gitExe -C $Root ls-remote --exit-code --heads origin $cur *> $null
+                $onRemote = ($LASTEXITCODE -eq 0)
+                $ErrorActionPreference = 'Stop'
+            }
+            if ($onRemote) { Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only') }
+            else {
+                Write-Note "branch '$(if ($cur) { $cur } else { 'none' })' is no longer on GitHub: switching to $RepoBranch"
+                Invoke-Step $gitExe @('-C', $Root, 'fetch', '--prune', 'origin')
+                Invoke-Step $gitExe @('-C', $Root, 'checkout', '-B', $RepoBranch, '--track', "origin/$RepoBranch")
+            }
+        }
         else { Invoke-Step $gitExe @('clone', '--branch', $RepoBranch, $RepoUrl, $Root) }
     }
 
