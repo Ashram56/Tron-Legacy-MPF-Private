@@ -172,6 +172,19 @@ GAME OVER, the lines of an intro, the status panel) is found by drawing the ROM'
 and takes a dark blue palette. `--dmd-color off` (or `TRON_DMD_COLOR=off`, or `tron/dmd/color="off"` in
 `game/project.godot`) shows the grey HD frames in the DMD's single colour; classic is never coloured.
 
+**Serum colours (this branch).** With the Serum colourisation `serum/trn_174h.cRZ` (read by `scripts/serum.py`),
+the effects it knows take its colours instead of the PuP hues, at the same 256x64 (Scale2x on the Serum colour
+indices). A frame is found as PinMAME finds it, by the CRC of its 16 shades. Effects drawn from their bitmaps
+(their text printed live) are in the colourisation only with that text, so their emulator capture
+(`reference_capture.gif` of the asset package) is looked up instead, by CRC or, when its values differ from
+the colourist's game (`JACKPOT=00`), by its screen (`Serum.fit`); each effect frame then takes the Serum frame
+of the capture frame that shows it, with the capture's text and panel left out. Frames still unknown take
+the colours of the nearest Serum frame or the effect's Serum shade colours. `palettes.json` in
+`game/media/dmd_hd_color/` counts, per effect, its `serum_frames`, `capture_frames`, `near_frames` and
+`shade_frames`. 83 effects are in Serum colours. Of the others with pictures, none of whose frames or capture
+the colourisation finds, the service, error and tournament screens keep the default palette and End of Line,
+Sea of Simulation, Recognizer battle, ZUSE ready, the CLU face and the big bumps screen their PuP hues.
+
 **P-ROC:** MPF's wheel ships the pypinproc binary for Windows (`pinproc.cp3xx-win_amd64.pyd`), so there
 `--hw proc` works once FTDI's D2XX driver and the Visual C++ runtime are installed. On Linux and macOS (MPF's
 macOS binary is an old Intel-only build), `scripts/install/build_pinproc.sh` builds libpinproc and pypinproc

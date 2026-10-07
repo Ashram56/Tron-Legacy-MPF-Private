@@ -95,6 +95,25 @@ class TestSerumFrames(unittest.TestCase):
         fid, corr = s.nearest(serum.shades(self.frame(56, "f000.png")))     # Daft Punk: not in the file
         self.assertLess(corr, serum.NEAR_MIN)
 
+    def test_capture_gives_the_screen(self):
+        """Effects drawn from their bitmaps (text printed live) are in the colourisation only with their text:
+        their emulator capture is, by CRC (Quorra, deff 62) or by screen when its values differ from the
+        colourist's game (disc multiball, deff 47: JACKPOT=00), and colours them."""
+        s = load()
+        s.reset()
+        self.assertEqual(serum.NO_FRAME, s.identify(serum.shades(self.frame(62, "f004.png"))))
+        caps = dmd_color.capture_serum(s, dmd_color.capture_path(62))
+        self.assertTrue(caps and all(by_crc and 5190 <= fid <= 5199 for _, fid, by_crc in caps))
+        caps = dmd_color.capture_serum(s, dmd_color.capture_path(47))
+        self.assertTrue(caps and all(not by_crc and 5136 <= fid <= 5160 for _, fid, by_crc in caps))
+        self.assertEqual((serum.NO_FRAME, 1.0), s.fit(bytes(4096)))
+        info = json.load(open(os.path.join(GAME, "media", "dmd_hd_color", "palettes.json"), encoding="utf-8"))
+        for deff in (47, 62, 90, 133):
+            e = info["deffs"]["deff_%03d" % deff]
+            self.assertEqual("serum", e["source"])
+            self.assertEqual(e["capture_frames"], len(glob.glob(
+                os.path.join(GAME, "media", "dmd", "deff_%03d" % deff, "f*.png"))))
+
     def test_palettes_json(self):
         info = json.load(open(os.path.join(GAME, "media", "dmd_hd_color", "palettes.json"), encoding="utf-8"))
         self.assertEqual("trn_174h.cRZ", info["serum"])

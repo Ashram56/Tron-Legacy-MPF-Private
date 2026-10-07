@@ -37,6 +37,15 @@ MAX_SPRITE_DETECT_AREAS = 4
 NO_FRAME = -1
 NEAR_X = 42                 # the status panel: left of this column in most frames (Serum mask 6 leaves it out)
 NEAR_MIN = 0.75             # nearest(): from this correlation on, the same art (deffs 116-124: 0.75-0.97; others < 0.6)
+# fit(): a frame the file does not know by its CRC (the ROM's text at other places: values of other lengths) is
+# the same screen as a Serum frame when its lit dots disagree on at most FIT_MAX of the dots that frame compares
+# outside its dynamic zones, with FIT_RECALL of that frame's lit dots lit. Frames that compare few dots, few lit
+# ones, or mostly lit ones (borders, flashes) match too much and are left out.
+FIT_MAX = 0.08
+FIT_RECALL = 0.85
+FIT_MIN_KNOWN = 300
+FIT_MIN_LIT = 40
+FIT_MAX_LIT = 0.5
 
 
 class Serum:
@@ -298,6 +307,32 @@ class Serum:
                 continue
             exy = ImageStat.Stat(ImageChops.multiply(q, img)).mean[0] * 255
             best = max(best, ((exy - qm * m) / (qs * sd), i))
+        return best[1], best[0]
+
+    def fit(self, frame):
+        """(id, share of disagreeing dots) of the Serum frame whose screen the frame (shades 0..15) shows when
+        its CRC does not find it, or (NO_FRAME, 1.0): per Serum frame, the dots it compares (outside its
+        comparison mask) and colours by itself (outside its dynamic zones) are lit or dark as its colours
+        say; the frame must agree on all but FIT_MAX of them, its lit dots FIT_RECALL lit (see FIT_MAX)."""
+        if not hasattr(self, "_fit"):
+            self._fit = []
+            px = self.width * self.height
+            for i in range(self.nframes):
+                lit_c = [0.3 * r + 0.59 * g + 0.11 * b > 20 for r, g, b in self.palette(i)]
+                m = self.compmaskID[i]
+                comp = self.compmasks[m * px:(m + 1) * px] if m < 255 else bytes(px)
+                cf, dm = self.cframes[i * px:(i + 1) * px], self.dynamasks[i * px:(i + 1) * px]
+                known = int("".join("1" if not comp[k] and dm[k] == 255 else "0" for k in range(px)), 2)
+                lit = known & int("".join("1" if lit_c[cf[k] % self.nccolors] else "0" for k in range(px)), 2)
+                nk, nl = known.bit_count(), lit.bit_count()
+                if nk >= FIT_MIN_KNOWN and FIT_MIN_LIT <= nl <= FIT_MAX_LIT * nk:
+                    self._fit.append((i, known, lit, nk, nl))
+        q = int("".join("1" if v else "0" for v in frame), 2)
+        best = (1.0, NO_FRAME)
+        for i, known, lit, nk, nl in self._fit:
+            miss = ((lit & ~q) | (known & ~lit & q)).bit_count() / nk
+            if miss <= FIT_MAX and miss < best[0] and (lit & q).bit_count() >= FIT_RECALL * nl:
+                best = (miss, i)
         return best[1], best[0]
 
     def _near_key(self, img, x0):

@@ -176,10 +176,12 @@ class TestColorMedia(unittest.TestCase):
         if info.get("serum"):
             # the Serum colourisation colours most effects; the others keep their PuP hues
             serum = [e for e in info["deffs"].values() if e["source"] == "serum"]
-            self.assertGreaterEqual(len(serum), 60)
+            self.assertGreaterEqual(len(serum), 80)
             self.assertGreaterEqual(sum(e["serum_frames"] for e in serum), 1500)
-            self.assertGreaterEqual(sum(e["serum_frames"] + e["near_frames"] + e["shade_frames"] for e in serum), 2000)
-            self.assertGreaterEqual(sum(1 for e in info["deffs"].values() if e["source"] == "pup"), 30)
+            self.assertGreaterEqual(sum(e.get("capture_frames", 0) for e in serum), 150)
+            self.assertGreaterEqual(sum(e["serum_frames"] + e.get("capture_frames", 0) + e["near_frames"]
+                                        + e["shade_frames"] for e in serum), 2100)
+            self.assertGreaterEqual(sum(1 for e in info["deffs"].values() if e["source"] == "pup"), 20)
         else:
             self.assertGreaterEqual(sum(1 for e in info["deffs"].values() if e["source"] == "pup"), 90)
             self.assertGreater(sum(1 for e in info["deffs"].values() if e.get("text_frames")), 20)
