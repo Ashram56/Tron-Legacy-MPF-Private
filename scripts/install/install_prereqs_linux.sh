@@ -15,15 +15,15 @@
 set -euo pipefail
 
 # Run from a clone, it sets up that clone. Run on its own (fetched with curl, README "Install"), it first
-# clones the repository into $TRON_DIR (default ~/Tron-Legacy-MPF), branch $TRON_BRANCH (default main),
+# clones the repository into $TRON_DIR (default ~/Tron-Legacy-MPF-Private), branch $TRON_BRANCH (default main),
 # from $TRON_REPO; an existing clone there gets a git pull.
 SRC="${BASH_SOURCE[0]:-}"
 if [ -n "$SRC" ] && [ -f "$(dirname "$SRC")/../setup.py" ]; then
     ROOT="$(cd "$(dirname "$SRC")/../.." && pwd)" CLONE=0
 else
-    ROOT="${TRON_DIR:-$HOME/Tron-Legacy-MPF}" CLONE=1
+    ROOT="${TRON_DIR:-$HOME/Tron-Legacy-MPF-Private}" CLONE=1
 fi
-REPO_URL="${TRON_REPO:-https://github.com/Ashram56/Tron-Legacy-MPF.git}"
+REPO_URL="${TRON_REPO:-https://github.com/Ashram56/Tron-Legacy-MPF-Private.git}"
 REPO_BRANCH="${TRON_BRANCH:-main}"
 HERE="$ROOT/scripts/install"
 OS_RELEASE="${TRON_OS_RELEASE:-/etc/os-release}"     # tests point this at a fake one
@@ -77,28 +77,46 @@ github_auth() {
         note "(dry run) a private repository asks for a GitHub token here$([ -n "$TOKEN" ] && echo ': using the one given')"
         return
     fi
+    # only the repositories nobody can read without a login need the token: a token that cannot read a public
+    # repository (a fine-grained one for other repositories, an expired one) would make git fail on it
+    local url private=()
+    for url in "$REPO_URL" "$ASSETS_URL"; do public_repo "$url" || private+=("$url"); done
+    if [ ${#private[@]} = 0 ]; then
+        note "the repositories are public: no token needed"
+        return
+    fi
     if [ -z "$TOKEN" ]; then
-        if public_repo "$REPO_URL" && public_repo "$ASSETS_URL"; then
-            note "the repositories are public: no token needed"
-            return
-        fi
-        if GIT_TERMINAL_PROMPT=0 git ls-remote "$ASSETS_URL" HEAD >/dev/null 2>&1 \
-                && GIT_TERMINAL_PROMPT=0 git ls-remote "$REPO_URL" HEAD >/dev/null 2>&1; then
+        local readable=1
+        for url in "${private[@]}"; do GIT_TERMINAL_PROMPT=0 git ls-remote "$url" HEAD >/dev/null 2>&1 || readable=0; done
+        if [ "$readable" = 1 ]; then
             note "a private repository, readable with the GitHub credentials git already has"
             return
         fi
         [ "$YES" = 0 ] && [ -r /dev/tty ] || die "a repository is private: set TRON_GITHUB_TOKEN to a GitHub token that can read it"
-        note "A repository is private. Paste a GitHub token that can read it (github.com > Settings > Developer"
-        note "settings > Personal access tokens; a fine-grained token with Contents: read-only on both repositories)."
+        note "Private: ${private[*]}"
+        note "Paste a GitHub token that can read it (github.com > Settings > Developer settings > Personal access"
+        note "tokens; a fine-grained token with Contents: read-only on these repositories)."
         printf '    token (not shown): ' >/dev/tty
         IFS= read -rs TOKEN </dev/tty
         printf '\n' >/dev/tty
-        [ -n "$TOKEN" ] || die "no token given"
     fi
-    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.https://x-access-token:${TOKEN}@github.com/.insteadOf" \
-        GIT_CONFIG_VALUE_0="https://github.com/"
-    GIT_TERMINAL_PROMPT=0 git ls-remote "$ASSETS_URL" HEAD >/dev/null 2>&1 \
-        || die "the GitHub token cannot read $ASSETS_URL (check its repository access and expiry)"
+    # a token copied from a text editor can carry spaces or a line break; GitHub tokens have none
+    TOKEN="$(printf '%s' "$TOKEN" | tr -d '[:space:]')"
+    [ -n "$TOKEN" ] || die "no token given"
+    local prefix=unknown
+    case "$TOKEN" in github_pat_*) prefix=github_pat_ ;; gh?_*) prefix="${TOKEN:0:4}" ;; esac
+    note "token: ${#TOKEN} characters, type $prefix (a fine-grained token is about 93, a classic one 40)"
+    # the token goes into the private repositories' URLs only (git's url.insteadOf, inherited by setup.py)
+    local i=0
+    for url in "${private[@]}"; do
+        export "GIT_CONFIG_KEY_$i=url.https://x-access-token:${TOKEN}@${url#https://}.insteadOf" "GIT_CONFIG_VALUE_$i=$url"
+        i=$((i + 1))
+    done
+    export GIT_CONFIG_COUNT=$i
+    for url in "${private[@]}"; do
+        GIT_TERMINAL_PROMPT=0 git ls-remote "$url" HEAD >/dev/null 2>&1 \
+            || die "the GitHub token cannot read $url (check its repository access and expiry)"
+    done
     printf 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=%s\n\n' "$TOKEN" \
         | git credential approve 2>/dev/null || true
     note "token accepted"

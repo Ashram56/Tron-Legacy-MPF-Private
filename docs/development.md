@@ -40,14 +40,15 @@ lists everything per OS: graphics, sound, disk, MPF Monitor's Qt libraries and t
 the asset submodule:
 
 ```sh
-git clone --recurse-submodules https://github.com/Ashram56/tron-legacy-mpf.git
-cd tron-legacy-mpf
+git clone --recurse-submodules https://github.com/Ashram56/Tron-Legacy-MPF-Private.git
+cd Tron-Legacy-MPF-Private
 ```
 
 The installers in `scripts/install/` then install whatever is missing (Python, Git, the Linux libraries) and
 run `setup.py`. Each one takes `--dry-run` to show its plan first. Run on their own, outside a clone (the
-README's one-line install), they also clone the repository into `$TRON_DIR` (default `~/Tron-Legacy-MPF`;
-`TRON_BRANCH` and `TRON_REPO` pick the branch and repository) before `setup.py`, or `git pull --ff-only` it:
+README's one-line install), they also clone the repository into `$TRON_DIR` (default `~/Tron-Legacy-MPF-Private`;
+`TRON_BRANCH` and `TRON_REPO` pick the branch and repository) before `setup.py`, or `git pull --ff-only` it.
+A private repository is read with a GitHub token (`TRON_GITHUB_TOKEN`, or pasted when asked), never a password:
 
 | OS | Installer |
 |---|---|
