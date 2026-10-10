@@ -1,9 +1,13 @@
 # Colour DMD and third-party media: notes for the improvement agent (private)
 
 Private on purpose. The public game repo ([Ashram56/Tron-Legacy-MPF](https://github.com/Ashram56/Tron-Legacy-MPF))
-only points here: its [master plan](https://github.com/Ashram56/Tron-Legacy-MPF/blob/main/docs/agents/README.md)
-and its improvement agent (`docs/agents/improvement.md`) cover everything else. Never describe this work, or
-copy its files, into a public repository. Keep this file current like the public agent files.
+only points here. The agents are game agnostic and live in
+[Ashram56/Stern-SAM-Decryption](https://github.com/Ashram56/Stern-SAM-Decryption): its
+[master plan](https://github.com/Ashram56/Stern-SAM-Decryption/blob/main/agents/README.md) and improvement agent
+(`agents/improvement.md`) cover everything else; Tron's status and decisions are on the
+[Tron game page](https://github.com/Ashram56/Tron-Legacy-MPF/blob/main/docs/agents/README.md). Never describe
+this work, or copy its files, into a public repository other than this one (Stern-SAM-Decryption is public
+too). Keep this file current like the public agent files.
 
 ## Owner decisions
 
@@ -35,4 +39,4 @@ of both Serum branches (`scripts/pup_colormap.py`, `game/tools/dmd_colormap.json
 - Windows/OneDrive: identical frames share a cache key; keep the existing cache file when another worker
   holds it (`scripts/fsutil.py`).
 
-Last updated 2026-10-08.
+Last updated 2026-10-10 (agents moved to Stern-SAM-Decryption).
