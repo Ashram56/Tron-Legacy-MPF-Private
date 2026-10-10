@@ -8,34 +8,40 @@ Windows, macOS and Linux, on a desktop or on the real machine through a P-ROC.
 ## Install
 
 Run the line for your OS in a terminal. It installs what is missing (Git, Python 3.11, the libraries), clones
-this repository into a `Tron-Legacy-MPF` folder in your home folder, and runs `scripts/setup.py`, which
+this repository into a `Tron-Legacy-MPF-Private` folder in your home folder, and runs `scripts/setup.py`, which
 downloads Godot, MPF and GMC and builds the media. The first run takes a while.
 
 **Windows 10/11** (PowerShell or cmd):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/main/scripts/install/install_prereqs_windows.ps1 | iex"
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF-Private/main/scripts/install/install_prereqs_windows.ps1 | iex"
 ```
 
 **macOS 12+:**
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/main/scripts/install/install_prereqs_macos.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF-Private/main/scripts/install/install_prereqs_macos.sh)
 ```
 
 **Linux** (Debian/Ubuntu, Fedora, Arch):
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF/main/scripts/install/install_prereqs_linux.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF-Private/main/scripts/install/install_prereqs_linux.sh)
 ```
 
 You can change where the files go, and what is installed:
 
 - **Folder:** set `TRON_DIR` before running the line. Windows: `$env:TRON_DIR = "D:\Tron"` first.
-  macOS / Linux: `TRON_DIR=~/games/tron bash <(curl ...)`. The default is `%USERPROFILE%\Tron-Legacy-MPF` on
-  Windows, `~/Tron-Legacy-MPF` elsewhere.
+  macOS / Linux: `TRON_DIR=~/games/tron bash <(curl ...)`. The default is `%USERPROFILE%\Tron-Legacy-MPF-Private`
+  on Windows, `~/Tron-Legacy-MPF-Private` elsewhere.
 - **Branch / repository:** `TRON_BRANCH` and `TRON_REPO`, the same way. A folder that already holds a clone is
   updated with `git pull --ff-only` instead.
+- **Private repositories:** git reads the private repositories (this one when it is private, and the assets if
+  they are made private) with a GitHub token, never a password. The installer asks for it first, before the long
+  installs (github.com > Settings > Developer settings > Personal access tokens; a fine-grained token with
+  Contents: read-only). On Windows, paste it with a right-click: Ctrl+V does not paste into the hidden prompt. Or
+  give it before the line, so nothing is asked: Windows `$env:TRON_GITHUB_TOKEN = "github_pat_..."` first,
+  macOS / Linux `TRON_GITHUB_TOKEN=github_pat_... bash <(curl ...)`.
 - **Options:** on macOS and Linux they go after the line, for example `bash <(curl ...) --no-monitor` to leave
   MPF Monitor out, `--proc` for the real machine, `--dry-run` to see the plan first. On Windows:
   `powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm <the URL above>))) -NoMonitor"`.
@@ -43,17 +49,30 @@ You can change where the files go, and what is installed:
 On Windows, keep the folder out of OneDrive (the default, your home folder, is): OneDrive locks and
 read-protects files while it syncs them. Setup copes with that, but it is slower and may leave stray files.
 
-**Clone first** (if the lines above cannot fetch the script: they need the repository to be public, and a
-private repository answers 404 to `curl`/`irm` without a token). Install Git, then:
+**If this repository is private**, the lines above get a 404: `curl` and `irm` need the token too. Give it
+to them (in PowerShell on Windows; the same token is then used for git):
+
+```powershell
+$env:TRON_GITHUB_TOKEN = "github_pat_..."; irm -Headers @{Authorization = "token $env:TRON_GITHUB_TOKEN"} https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF-Private/main/scripts/install/install_prereqs_windows.ps1 | iex
+```
 
 ```sh
-git clone --recurse-submodules https://github.com/Ashram56/Tron-Legacy-MPF.git
-cd Tron-Legacy-MPF
+export TRON_GITHUB_TOKEN=github_pat_...; bash <(curl -fsSL -H "Authorization: token $TRON_GITHUB_TOKEN" https://raw.githubusercontent.com/Ashram56/Tron-Legacy-MPF-Private/main/scripts/install/install_prereqs_linux.sh)
+```
+
+(`install_prereqs_macos.sh` on macOS.)
+
+**Clone first** (if the lines above cannot fetch the script). Install Git, then:
+
+```sh
+git clone --recurse-submodules https://github.com/Ashram56/Tron-Legacy-MPF-Private.git
+cd Tron-Legacy-MPF-Private
 scripts/install/install_prereqs_linux.sh          # or install_prereqs_macos.sh
 ```
 
-On Windows: `powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1`. Git asks
-for your GitHub login (or a token) when the repository is private.
+On Windows: `powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1`. The
+installer then asks for the GitHub token, as above, for the private repositories (git itself asks
+for a token as the password when it clones a private repository).
 
 ## Play
 
