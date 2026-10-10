@@ -176,10 +176,12 @@ class TestColorMedia(unittest.TestCase):
         if info.get("serum"):
             # the Serum colourisation colours most effects; the others keep their PuP hues
             serum = [e for e in info["deffs"].values() if e["source"] == "serum"]
-            self.assertGreaterEqual(len(serum), 60)
+            self.assertGreaterEqual(len(serum), 80)
             self.assertGreaterEqual(sum(e["serum_frames"] for e in serum), 1500)
-            self.assertGreaterEqual(sum(e["serum_frames"] + e["near_frames"] + e["shade_frames"] for e in serum), 2000)
-            self.assertGreaterEqual(sum(1 for e in info["deffs"].values() if e["source"] == "pup"), 30)
+            self.assertGreaterEqual(sum(e.get("capture_frames", 0) for e in serum), 150)
+            self.assertGreaterEqual(sum(e["serum_frames"] + e.get("capture_frames", 0) + e["near_frames"]
+                                        + e["shade_frames"] for e in serum), 2100)
+            self.assertGreaterEqual(sum(1 for e in info["deffs"].values() if e["source"] == "pup"), 20)
         else:
             self.assertGreaterEqual(sum(1 for e in info["deffs"].values() if e["source"] == "pup"), 90)
             self.assertGreater(sum(1 for e in info["deffs"].values() if e.get("text_frames")), 20)
@@ -197,7 +199,31 @@ class TestColorMedia(unittest.TestCase):
             self.assertEqual("RGB", big.mode)
             w, h = Image.open(src).size
             self.assertEqual((w * dmd_color.COLOR_SCALE, h * dmd_color.COLOR_SCALE), big.size)
-        self.assertEqual([], glob.glob(os.path.join(GAME, "media", "dmd_hd_color", "*", "solid*.png")))
+
+    def test_sprites_in_serum_colours(self):
+        """The letters and the arcade reel's pictures have colour twins (with the Serum file): 2x, with their
+        transparency; ZUSE's solid letters as the colourisation shows them, the reel in its green."""
+        from PIL import Image
+        info = json.load(open(os.path.join(GAME, "media", "dmd_hd_color", "palettes.json"), encoding="utf-8"))
+        if not info.get("serum"):
+            self.assertEqual({}, info.get("sprites", {}))
+            return
+        sprites = [p for d in dmd_color.SPRITE_DEFFS
+                   for p in glob.glob(os.path.join(GAME, "media", "dmd", "deff_%03d" % d, "*.png"))
+                   if not os.path.basename(p)[1:-4].isdigit()]
+        self.assertEqual(4 * 8 + 28, len(sprites))
+        for src in sprites:
+            rel = os.path.relpath(src, os.path.join(GAME, "media", "dmd")).replace(os.sep, "/")
+            self.assertIn(rel, info["sprites"])
+            big = Image.open(os.path.join(GAME, "media", "dmd_hd_color", rel))
+            self.assertEqual("RGBA", big.mode)
+            small = Image.open(src).convert("RGBA")
+            self.assertEqual((small.width * 2, small.height * 2), big.size)
+            self.assertEqual(small.getchannel("A").getbbox() is None, big.getchannel("A").getbbox() is None)
+        self.assertEqual("capture", info["sprites"]["deff_092/solid0.png"]["how"])
+        r, g, b, _ = Image.open(os.path.join(GAME, "media", "dmd_hd_color", "deff_105", "award_01_a.png")).convert(
+            "RGBA").getpixel((10, 20))
+        self.assertTrue(g > 0 and r == 0 and b == 0, (r, g, b))
 
 
 class TestRunSwitch(unittest.TestCase):
@@ -211,12 +237,11 @@ class TestRunSwitch(unittest.TestCase):
 
 
 # Pixel hashes (sha1 of the RGBA pixels, 16 hex digits) of HD frames at 1280x320 rendered by phase11-hd
-# (00d67c0; deff 46 re-taken after phase10-docker changed its status panel), before colour existed:
-# --dmd-color=off must keep giving these. Effects without text nodes (their
-# pictures only), times 0, 400 and 1600 ms.
+# (29b1b85: the Tron blue tint, no glow), before colour existed: --dmd-color=off must keep giving these.
+# Effects without text nodes (their pictures only), times 0, 400 and 1600 ms.
 HD_MONO = {
-    "deff_046": ["e214b6ee01710805", "8beb5ede5c32156c", "764dc5efb5f145f6"],
-    "deff_085": ["43166058c3d61514", "287d47affb38753d", "63b08551779a5221"],
+    "deff_046": ["67c19910553a69d7", "6ba267046ecc4cc3", "4bec6155c25801e6"],
+    "deff_085": ["4c87418160015986", "488eea378d4a632c", "d68d9fb12d85cd64"],
 }
 
 

@@ -13,7 +13,8 @@ from tests.tron_test import ROOT, TronTestCase
 
 MACHINE_TYPE_STERN_SAM = 6
 PACKAGE = os.path.join(ROOT, "assets", "mpf_package", "config")
-PROC_CONFIG = "../../tests/machine_proc.yaml"    # relative to game/config: config.yaml, then hw_proc.yaml
+PROC_CONFIG = "../../tests/machine_proc_le.yaml"    # relative to game/config: config.yaml, then hw_proc_le.yaml (LE)
+PRO_CONFIG = "../../tests/machine_proc.yaml"       # config.yaml, then hw_proc.yaml (Pro, the default)
 
 
 def _atoi(text):
@@ -262,22 +263,22 @@ class TestProcAddresses(ProcCase):
     def test_coils_reach_the_proc(self):
         self.machine.coils["c_trough_up_kicker"].pulse()
         self.sync()
-        self.pinproc.driver_pulse.assert_called_with(32, 25)
+        self.pinproc.driver_pulse.assert_called_with(32, 64)                     # ROM: 64 ms
         self.machine.coils["c_shaker_motor_optional"].enable()
         self.sync()
         self.pinproc.driver_schedule.assert_called_with(39, 0xffffffff, 0, True)
         self.machine.coils["c_orbit_up_down_post"].enable()
         self.sync()
-        self.pinproc.driver_patter.assert_called_with(38, 1, 1, 30, True)        # 30 ms, then half power
+        self.pinproc.driver_patter.assert_called_with(38, 1, 6, 64, True)        # ROM: 64 ms, then 1 ms on / 6 ms off
         self.advance_time_and_run(4.1)
-        self.pinproc.driver_disable.assert_called_with(38)                       # max_hold_duration
+        self.pinproc.driver_disable.assert_any_call(38)                          # max_hold_duration
         self.machine.coils["f_backpanel"].pulse(300)                             # > 255 ms: timed enable
         self.sync()
         self.pinproc.driver_schedule.assert_called_with(59, 0xffffffff, 0, True)
         self.machine.lights["l_shoot_again"].on()
         self.advance_time_and_run(.1)
         self.sync()
-        self.pinproc.driver_schedule.assert_called_with(179, 0xffffffff, 0, True)
+        self.pinproc.driver_schedule.assert_any_call(179, 0xffffffff, 0, True)     # (attract lamps reach the P-ROC too)
 
     def _rules(self, switch):
         """Driver states the P-ROC gets for a switch's closed/open events (latest rule per event)."""
@@ -301,7 +302,7 @@ class TestProcAddresses(ProcCase):
         self.assertEqual([43, 46], sorted(d["driverNum"] for d in left["open_nondebounced"]))
         self.assertEqual([(47, 1, 11, 40)], [(d["driverNum"], d["patterOnTime"], d["patterOffTime"],
                                                d["outputDriveTime"]) for d in self._rules(18)["closed_nondebounced"]])
-        for switch, driver, ms in ((57, 44, 12), (58, 45, 12), (61, 40, 12), (62, 41, 12), (63, 42, 12)):
+        for switch, driver, ms in ((57, 44, 32), (58, 45, 32), (61, 40, 32), (62, 41, 32), (63, 42, 32)):
             drivers = self._rules(switch)["closed_nondebounced"]          # S26 S27 S30 S31 S32
             self.assertEqual([(driver, ms)], [(d["driverNum"], d["outputDriveTime"]) for d in drivers])
         self.machine.events.post("tron_tilt")
@@ -372,3 +373,113 @@ class TestProcConfigVirtual(TronTestCase):
         self.assertTrue(self.tron.tilted)
         self.assertFalse(any(f._enabled for f in flippers.values()))
         self.assertFalse(any(a._enabled for a in self.machine.autofire_coils.values()))
+
+
+def _pro_map():
+    """assets/io/pro_vs_le_io_map.csv: {(kind, LE number): Pro number or None}."""
+    out = {}
+    with open(os.path.join(ROOT, "assets", "io", "pro_vs_le_io_map.csv"), encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            on_pro = row["le_name_on_pro_at"].strip()
+            out[(row["kind"], int(row["number"]))] = int(on_pro) if on_pro.isdigit() else None
+    return out
+
+
+class TestProcPro(ProcCase):
+    """hw_proc.yaml, the default: the Pro's IO assignments (assets/docs/PRO_VS_LE.md) on the P-ROC."""
+    RAMP_TUBES = True
+
+    def get_config_file(self):
+        return PRO_CONFIG
+
+    def proc(self, device):
+        if hasattr(device, "hw_switch"):
+            return device.hw_switch.number
+        if hasattr(device, "hw_driver"):
+            return device.hw_driver.number
+        return device.hw_drivers["white"][0].number
+
+    def test_machine_vars(self):
+        self.assertEqual("pro", self.machine.variables.get_machine_var("machine_variant"))
+        self.assertEqual(0, self.machine.variables.get_machine_var("fiber_optics"))
+
+    def test_pro_numbers(self):
+        on = self.machine.default_platform
+        for name, number in (("s_tron_t", "S04"), ("s_tron_r", "S03"), ("s_tron_o", "S02"), ("s_tron_n", "S01")):
+            self.assertEqual(sam_decode(number), self.proc(self.machine.switches[name]), name)
+        for name, number in (("c_disc_direction_relay", "C03"), ("f_left_ramp", "C19"), ("f_lower_left", "C22"),
+                             ("f_lower_right", "C23"), ("f_right_ramp", "C25"), ("f_red_disc", "C31"),
+                             ("f_blue_disc", "C32"), ("c_shaker_motor_optional", "C08")):
+            self.assertIs(on, self.machine.coils[name].platform, name)
+            self.assertEqual(sam_decode(number), self.proc(self.machine.coils[name]), name)
+        for name, number in (("l_start_button", "L01"), ("l_tron_n", "L14"), ("l_shoot_again", "L03"),
+                             ("l_left_outlane", "L08"), ("l_left_orbit_disc", "L66")):
+            self.assertEqual(sam_decode(number), self.proc(self.machine.lights[name]), name)
+
+    def test_le_only_devices_are_virtual(self):
+        on = self.machine.default_platform
+        for name in ("c_drop_target_bank", "c_recognizer_motor_relay"):
+            self.assertIsNot(on, self.machine.coils[name].platform, name)
+        for name in ("s_recog_motor_pos_1", "s_recog_motor_pos_2", "s_recog_motor_pos_3"):
+            self.assertIsNot(on, self.machine.switches[name].platform, name)
+        for name in ("l_recognizer_pos_1", "l_recognizer_pos_2", "l_recognizer_pos_3"):
+            light = self.machine.lights[name]
+            self.assertEqual("virtual", light.config["platform"], name)
+            self.assertEqual("VirtualLight", type(list(light.hw_drivers.values())[0][0]).__name__)
+
+    def test_every_device_matches_the_pro_map(self):
+        """Each P-ROC address is unique and is the LE device's Pro number from the map."""
+        pro = _pro_map()
+        le = {kind: _load(os.path.join(PACKAGE, f))[section] for kind, f, section in (
+            ("switch", "switches.yaml", "switches"), ("coil", "coils.yaml", "coils"), ("lamp", "lights.yaml", "lights"))}
+        same = {("coil", 19), ("coil", 25), ("coil", 31), ("coil", 32)}   # ramp and disc flashers: renamed on the Pro
+        for kind, devices in (("switch", self.machine.switches), ("coil", self.machine.coils),
+                              ("lamp", self.machine.lights)):
+            seen = {}
+            for device in devices.values():
+                if device.name in ("l_left_ramp_tube", "l_right_ramp_tube"):
+                    continue
+                if kind != "lamp" and device.platform is not self.machine.default_platform:
+                    continue
+                if kind == "lamp" and device.config.get("platform") == "virtual":
+                    continue
+                proc = self.proc(device)
+                self.assertNotIn(proc, seen, "{} and {} share {}".format(device.name, seen.get(proc), proc))
+                seen[proc] = device.name
+                cfg = le[kind].get(device.name)
+                if cfg is None or not str(cfg["number"]).isdigit():
+                    continue
+                number = int(cfg["number"])
+                expected = number if (kind, number) in same else pro.get((kind, number), number)
+                prefix = {"switch": "S", "coil": "C", "lamp": "L"}[kind]
+                self.assertEqual(sam_decode("{}{:02d}".format(prefix, expected)), proc, device.name)
+
+    def test_rules_lamps_reach_the_proc(self):
+        """The rules address lamps by the ROM's (LE) number: on the Pro, LE lamp 26 SHOOT AGAIN is the light the Pro
+        has at 3, and the attract leffs reach the P-ROC's lamp drivers."""
+        lamps = self.tron.lamps
+        self.assertEqual("l_shoot_again", lamps.lights[26].name)
+        self.assertEqual("l_start_button", lamps.lights[65].name)
+        self.assertEqual(64, len(lamps.lights))           # every LE lamp; 41 and 44 are NOT USED
+        self.advance_time_and_run(2)
+        self.sync()
+        driven = {c.args[0] for c in self.pinproc.driver_schedule.call_args_list + self.pinproc.driver_disable.call_args_list}
+        self.assertTrue(driven & set(LAMP_DRIVERS))
+
+    def test_lower_flashers_follow_the_ramp_flashers(self):
+        """The Pro fires 22 / 23 with the ramp flashers 19 / 25 (assets/rom_data/pro/README.md)."""
+        self.machine.coils["f_left_ramp"].pulse(48)
+        self.sync()
+        self.pinproc.driver_pulse.assert_any_call(sam_decode("C19"), 48)
+        self.pinproc.driver_pulse.assert_any_call(sam_decode("C22"), 48)
+        self.tron.lamps.flasher("f_right_ramp", 50)
+        self.sync()
+        self.pinproc.driver_pulse.assert_any_call(sam_decode("C25"), 50)
+        self.pinproc.driver_pulse.assert_any_call(sam_decode("C23"), 50)
+
+    def test_fiber_optics_off(self):
+        """proc_ramp_tubes is 1 here, but a Pro leaves the tubes off unless fiber_optics.yaml enables them."""
+        self.advance_time_and_run(.1)
+        self.sync()
+        for call in self.pinproc.aux_send_commands.call_args_list:
+            self.assertFalse([c for c in call.args[1] if isinstance(c, tuple)])

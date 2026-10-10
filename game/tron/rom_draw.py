@@ -1,8 +1,8 @@
 """DMD screens drawn the way the ROM draws them: text in a ROM font at a dot position, and ROM images.
 
 A screen is a list of draw items, sent to GMC as the event arg `draw` and drawn by tron/service_screen.gd:
-- text(t, font, x, y, flags): text_draw_str (y = baseline row; flags 1 left edge at x, 2 centred on x,
-  4 right edge at x), in a ROM font (game/fonts, scripts/gen_fonts.py);
+- text(t, font, x, y, flags, level): text_draw_str (y = baseline row; flags 1 left edge at x, 2 centred on x,
+  4 right edge at x), in a ROM font (game/fonts, scripts/gen_fonts.py), at a palette level (0-15, default 15);
 - fit(t, x, y, fonts): text_draw_msg_fit, the first font of the list whose text width fits the display;
 - image(n, x, y): bitmap_draw of ROM image n (assets/mpf_package/media/rom_images_all.zip), top left at x, y;
 - box(x, y, w, h, level): a filled rectangle at a palette level (0-15).
@@ -36,8 +36,11 @@ def text_width(font, s):
     return sum(g["w"] + g["xoff"] + m["spacing"] for g in gs) - m["spacing"] if gs else 0
 
 
-def text(t, font, x=64, y=0, flags=2):
-    return {"t": str(t), "f": font, "x": x, "y": y, "a": flags}
+def text(t, font, x=64, y=0, flags=2, level=15):
+    item = {"t": str(t), "f": font, "x": x, "y": y, "a": flags}
+    if level != 15:
+        item["l"] = level
+    return item
 
 
 def fit(t, x=64, y=0, fonts_list=(2, 0), flags=2, width=WIDTH):

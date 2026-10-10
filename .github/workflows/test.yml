@@ -1,9 +1,9 @@
 name: test
 
-# Only pull requests into main (and a manual run from the Actions tab): the stacked phase branches are
+# Only pushes to main (and a manual run from the Actions tab): other branches and pull requests are
 # tested locally.
 on:
-  pull_request:
+  push:
     branches: [main]
   workflow_dispatch:
 
@@ -21,8 +21,8 @@ jobs:
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true          # assets/ (public repo, no LFS needed)
+        # assets/ only (scripts/setup.py fetches it): the PuP Pack submodule is a private repo the workflow
+        # token cannot read, and tests/test_pup.py skips its pack tests without it
 
       - uses: actions/setup-python@v5
         with:

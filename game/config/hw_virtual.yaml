@@ -1,17 +1,9 @@
 #config_version=6
 
-# Hardware overlay for the desktop and MPF Monitor, on top of the platform-neutral config.yaml:
+# Hardware overlay for the desktop and MPF Monitor, Tron Legacy Pro (the default):
 #   cd game && ../.venv/bin/mpf game . -c config,hw_virtual   (or: python scripts/run.py --hw virtual)
-# smart_virtual moves balls between the ball devices when their eject coils pulse and sets the trough,
-# shooter lane and VUK switches to match (MPF's smart_virtual platform); everything else is the game as is.
-# MPF Monitor connects to MPF's own BCP server (127.0.0.1:5051, MPF 0.80's default "bcp: servers") and
-# uses game/monitor/monitor.yaml (docs/hardware.md).
+# The LE overlay (hw_virtual_le.yaml) with the Pro's IO assignments (machine_pro.yaml). docs/hardware.md, "Pro or LE".
 
-hardware:
-  platform: smart_virtual
-
-# The trough starts full: 4 balls (machine: balls_installed)
-virtual_platform_start_active_switches: s_trough_1_r, s_trough_2, s_trough_3, s_trough_4_l
-
-# The trough's balls roll toward the eject end, as on the machine (tron/virtual_hardware.py).
-custom_code: tron.os_layer.TronOS, tron.virtual_hardware.VirtualTrough
+config:
+  - hw_virtual_le.yaml
+  - machine_pro.yaml

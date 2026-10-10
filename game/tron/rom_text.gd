@@ -193,14 +193,15 @@ func _layout() -> void:
 	position = Vector2(left, y - int(m["ascent"]) + 1)
 	size = Vector2(maxi(w, 1) + 2, line_h)
 	if hd():
-		_layout_hd(shown, font_id, int(m["ascent"]), line_h)
+		_layout_hd(shown, font_id, int(m["ascent"]), line_h, w)
 
 
-## HD mode: the line is drawn by a tron/rom_text_hd.gd child (vector outlines, text colour and glow); the
-## label itself only places it (its own glyphs are hidden).
-func _layout_hd(shown: String, font_id: int, ascent: int, line_h: int) -> void:
+## HD mode: the line is drawn by a tron/rom_text_hd.gd child (vector outlines or a clean font, text colour and
+## glow; w = the ROM's text width, the clean font's box); the label itself only places it (its own glyphs
+## are hidden).
+func _layout_hd(shown: String, font_id: int, ascent: int, line_h: int, w: int) -> void:
 	if _hd_text == null:
 		_hd_text = RomTextHd.new()
 		add_child(_hd_text, false, INTERNAL_MODE_FRONT)
 		self_modulate = Color(1, 1, 1, 0)
-	_hd_text.set_line(shown, font_id, ascent, line_h)
+	_hd_text.set_line(shown, font_id, ascent, line_h, w, rom_flags)

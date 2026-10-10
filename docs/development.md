@@ -13,7 +13,7 @@ built from the reverse-engineered rules, media and effects in
 | `assets/` | Git submodule: [Tron-Legacy-LE-ROM-Decryption](https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption), the rules specs, MPF config and media read from the ROM. Never copy files out of it; reference them, so a sync never leaves stale copies. |
 | `game/` | The MPF machine folder and the Godot (GMC) project in one: `config/`, `modes/`, `slides/`, `project.godot`, `gmc.cfg`. Kept apart from `assets/` so Godot does not import the asset repo's 12,000 files. |
 | `scripts/` | Workspace setup (`setup.py`, `toolchain.py`, the prerequisite installers in `install/`), the launcher (`run.py`), the render check and the asset sync. |
-| `docs/` | `requirements.md`: what a computer needs, per OS. `hardware.md`: the two hardware configs (virtual + MPF Monitor, and the real machine on a Multimorphic P-ROC). |
+| `docs/` | `requirements.md`: what a computer needs, per OS. `hardware.md`: the two hardware configs (virtual + MPF Monitor, and the real machine on a Multimorphic P-ROC). `vpx.md`: the Visual Pinball X table played by MPF. |
 | `docker/` | The optional Docker setup for Linux hosts: one container per window (DMD, MPF, MPF Monitor). |
 
 ## What is in git, what is not
@@ -108,6 +108,7 @@ UI). Godot's log is `game/logs/godot.log`.
 | `python scripts/run.py --monitor` | The same plus MPF Monitor (`mpf monitor`, layout in `game/monitor/`): click switches, see lamps and coils. |
 | `python scripts/run.py --scenario NAME` | Plays `assets/rules/traces/NAME.txt` in real time on smart_virtual. |
 | `python scripts/run.py --hw proc` | The real machine: Multimorphic P-ROC on the Stern SAM IO board; Godot gets `-- --proc-dmd` for the DMD. |
+| `python scripts/run.py --hw vpx` | Visual Pinball X plays the VPW table and MPF replaces PinMAME, through the `TronMPF.Controller` bridge (Windows). Set-up, device map and checks: [docs/vpx.md](vpx.md). |
 
 **Playing on the desktop.** With the DMD window focused, keys close the machine's switches (`game/gmc.cfg`,
 `[keyboard]`); in MPF Monitor, click a switch instead (`s_coin`, `s_start_button` and the other cabinet
@@ -134,7 +135,7 @@ and finds the venv itself.) By hand, the same thing is `godot --path game`, then
 **HD** by default: the window can be any size (drag it, or `--dmd-size 1920x480`), the layout stays the ROM's,
 text and numbers are drawn from vector (TrueType) fonts traced from each of the ROM's 44 fonts (same style,
 weight, outline and width, every advance the ROM's, sharp at any size up to 4K; built into `game/fonts/hd/` by
-`scripts/font_outline.py`) in a glowing Tron blue, and the animations are upscaled offline with a smoothing filter for 16-shade
+`scripts/font_outline.py`) in Tron blue (the animations too, level for level), and the animations are upscaled offline with a smoothing filter for 16-shade
 DMD art (`scripts/dmd_hd.py`). **Classic** is the original output, exactly the ROM's dots scaled up by whole
 pixels (what `scripts/render_diff.py` checks against the ROM captures). To go back to it:
 
@@ -147,8 +148,11 @@ pixels (what `scripts/render_diff.py` checks against the ROM captures). To go ba
 | `--dmd-dots N` (or `TRON_DMD_DOTS=N`) | HD with a dot-matrix look: N round dots per DMD dot (1 = the 128x32 grid; 2 looks good from 1280 px up; 0 = off, the default) |
 | `--dmd-size WxH` | the window size, for example `1920x480` (default 1024x256; HD scales to any size, classic in whole steps) |
 | `--dmd-color off` (or `TRON_DMD_COLOR=off`) | HD with the animations in the DMD's single colour (default: on, see HD colour below) |
-| `--dmd-text-color "#RRGGBB"` (or `TRON_DMD_TEXT_COLOR`, `tron/dmd/text_color`) | HD text colour (default `#2a6cff`): ROM text, score display, service menu, ZUSE/TRON letters, attract pages |
-| `--dmd-text-glow X` (or `TRON_DMD_TEXT_GLOW`, `tron/dmd/text_glow`) | strength of the glow around HD text (default 0.8, 0 = none); its colour: `TRON_DMD_TEXT_GLOW_COLOR` or `tron/dmd/text_glow_color` (default `#22b8ff`) |
+| `--dmd-tint blue\|orange` (or `TRON_DMD_TINT`, `tron/dmd/tint`) | HD DMD colour, text and animations: Tron blue (default) or the original orange |
+| `--dmd-font NAME` (or `TRON_DMD_FONT`, `tron/dmd/font`) | HD text font: `orbitron` (default), `rajdhani`, `godot` (Godot's default font), a `.ttf`/`.otf` file, or `rom` (the ROM's dot fonts traced to smooth outlines). Clean fonts keep the ROM layout: same lines and alignment, the ROM's capital height, squeezed to the ROM's text width when wider |
+| `--dmd-text-scale X` (or `TRON_DMD_TEXT_SCALE`, `tron/dmd/text_scale`) | size of the clean HD fonts: 1 = capitals as tall as the ROM's and lines no wider than the ROM's text; default 0.85; 0.5-1.5. Lines shrink about their middle |
+| `--dmd-text-color "#RRGGBB"` (or `TRON_DMD_TEXT_COLOR`, `tron/dmd/text_color`) | HD text colour (default the tint's, `#2a6cff`): ROM text, score display, service menu, ZUSE/TRON letters, attract pages |
+| `--dmd-text-glow X` (or `TRON_DMD_TEXT_GLOW`, `tron/dmd/text_glow`) | strength of the glow around HD text (default 0.75, a soft glow; 0 = none); its colour: `TRON_DMD_TEXT_GLOW_COLOR` or `tron/dmd/text_glow_color` (default the tint's, `#22b8ff`) |
 
 `--hw proc` is always classic: the P-ROC drives the machine's own 128x32 DMD. Godot reads the same choice
 from its user args (`godot --path game -- --dmd=classic --dmd-dots=2`); `game/tools/dmd_mode.gd` applies it.
@@ -170,6 +174,25 @@ live (scores, values, letters) is not coloured by this; text baked into the capt
 GAME OVER, the lines of an intro, the status panel) is found by drawing the ROM's lines with their fonts
 and takes a dark blue palette. `--dmd-color off` (or `TRON_DMD_COLOR=off`, or `tron/dmd/color="off"` in
 `game/project.godot`) shows the grey HD frames in the DMD's single colour; classic is never coloured.
+
+**Serum colours (this branch).** With the Serum colourisation `serum/trn_174h.cRZ` (read by `scripts/serum.py`),
+the effects it knows take its colours instead of the PuP hues, at the same 256x64 (Scale2x on the Serum colour
+indices). A frame is found as PinMAME finds it, by the CRC of its 16 shades. Effects drawn from their bitmaps
+(their text printed live) are in the colourisation only with that text, so their emulator capture
+(`reference_capture.gif` of the asset package) is looked up instead, by CRC or, when its values differ from
+the colourist's game (`JACKPOT=00`), by its screen (`Serum.fit`); each effect frame then takes the Serum frame
+of the capture frame that shows it, with the capture's text and panel left out. Frames still unknown take
+the colours of the nearest Serum frame or the effect's Serum shade colours. `palettes.json` in
+`game/media/dmd_hd_color/` counts, per effect, its `serum_frames`, `capture_frames`, `near_frames` and
+`shade_frames`. 83 effects are in Serum colours. Of the others with pictures, none of whose frames or capture
+the colourisation finds, the service, error and tournament screens keep the default palette and End of Line,
+Sea of Simulation, Recognizer battle, ZUSE ready, the CLU face and the big bumps screen their PuP hues.
+The sprites drawn over the effects (the ZUSE/TRON letters of `letter_panel.gd`, the arcade reel's cabinets and
+icons) get colour twins too, RGBA at 2x in `game/media/dmd_hd_color/deff_NNN/` (`sprite_build`, listed under
+`sprites` in `palettes.json`): each is coloured by the Serum frame of the capture that shows it, or pasted at its
+place into a Serum frame of its effect; letters that only a screen match finds take a per-shade table (metallic
+solid ZUSE, grey hollow ZUSE, blue hollow TRON). `tools/dmd_mode.gd` swaps them in (`color_texture`); the
+letters keep those colours with no tint or glow, and the reel draws them at half scale.
 
 **P-ROC:** MPF's wheel ships the pypinproc binary for Windows (`pinproc.cp3xx-win_amd64.pyd`), so there
 `--hw proc` works once FTDI's D2XX driver and the Visual C++ runtime are installed. On Linux and macOS (MPF's

@@ -2,7 +2,7 @@
 
 This is an optional alternative to the native install (`scripts/setup.py`, or the installers in
 `scripts/install/`). One image holds the whole toolchain: Python 3.11 with MPF 0.80.1 and MPF Monitor 1.0.0,
-Godot 4.5.2, and the libraries for X11, OpenGL/Vulkan, sound and the P-ROC's USB chip. Nothing is installed
+Godot 4.6.3, and the libraries for X11, OpenGL/Vulkan, sound and the P-ROC's USB chip. Nothing is installed
 on your computer except Docker.
 
 The game runs as three containers. Each one opens its own window on your desktop, so you can put each window
@@ -79,6 +79,8 @@ Settings are environment variables. Set them per command (`DMD_SCREEN=1 docker/t
 | Variable | Default | What |
 |---|---|---|
 | `TRON_HW` | `virtual` | `proc` for the real machine |
+| `TRON_MACHINE` | `pro` | `le`: a Tron Legacy LE's IO assignments ([hardware.md](../docs/hardware.md), "Pro or LE") |
+| `TRON_FIBER_OPTICS` | off | `1`: drive the ramp light tubes on a Pro |
 | `DMD_SCREEN` | | Monitor number for the DMD window: 0, 1, 2... |
 | `DMD_FULLSCREEN` | `0` | `1`: the DMD fills that monitor |
 | `DMD_POSITION` | | Window position in desktop pixels, e.g. `1920,0` |

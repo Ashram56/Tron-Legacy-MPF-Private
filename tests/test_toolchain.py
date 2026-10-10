@@ -17,7 +17,7 @@ import run  # noqa: E402
 import setup  # noqa: E402
 import toolchain as tc  # noqa: E402
 
-RELEASES = "https://github.com/godotengine/godot/releases/download/4.5.2-stable/"
+RELEASES = "https://github.com/godotengine/godot/releases/download/4.6.3-stable/"
 
 
 class TestHost(unittest.TestCase):
@@ -59,12 +59,12 @@ class TestVenv(unittest.TestCase):
 
 class TestGodot(unittest.TestCase):
     CASES = [  # os, arch, zip, executable in tools/godot/
-        ("windows", "x86_64", "Godot_v4.5.2-stable_win64.exe.zip", ["Godot_v4.5.2-stable_win64.exe"]),
-        ("windows", "arm64", "Godot_v4.5.2-stable_windows_arm64.exe.zip", ["Godot_v4.5.2-stable_windows_arm64.exe"]),
-        ("macos", "x86_64", "Godot_v4.5.2-stable_macos.universal.zip", ["Godot.app", "Contents", "MacOS", "Godot"]),
-        ("macos", "arm64", "Godot_v4.5.2-stable_macos.universal.zip", ["Godot.app", "Contents", "MacOS", "Godot"]),
-        ("linux", "x86_64", "Godot_v4.5.2-stable_linux.x86_64.zip", ["Godot_v4.5.2-stable_linux.x86_64"]),
-        ("linux", "arm64", "Godot_v4.5.2-stable_linux.arm64.zip", ["Godot_v4.5.2-stable_linux.arm64"]),
+        ("windows", "x86_64", "Godot_v4.6.3-stable_win64.exe.zip", ["Godot_v4.6.3-stable_win64.exe"]),
+        ("windows", "arm64", "Godot_v4.6.3-stable_windows_arm64.exe.zip", ["Godot_v4.6.3-stable_windows_arm64.exe"]),
+        ("macos", "x86_64", "Godot_v4.6.3-stable_macos.universal.zip", ["Godot.app", "Contents", "MacOS", "Godot"]),
+        ("macos", "arm64", "Godot_v4.6.3-stable_macos.universal.zip", ["Godot.app", "Contents", "MacOS", "Godot"]),
+        ("linux", "x86_64", "Godot_v4.6.3-stable_linux.x86_64.zip", ["Godot_v4.6.3-stable_linux.x86_64"]),
+        ("linux", "arm64", "Godot_v4.6.3-stable_linux.arm64.zip", ["Godot_v4.6.3-stable_linux.arm64"]),
     ]
 
     def test_urls_and_paths(self):
@@ -141,12 +141,12 @@ class TestUnpack(unittest.TestCase):
     def test_godot_zip_keeps_exec_bit(self):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as z:
-            info = zipfile.ZipInfo("Godot_v4.5.2-stable_linux.x86_64")
+            info = zipfile.ZipInfo("Godot_v4.6.3-stable_linux.x86_64")
             info.external_attr = 0o755 << 16
             z.writestr(info, "ELF")
         with tempfile.TemporaryDirectory() as tmp:
             setup.unzip(buf.getvalue(), tmp, "linux")
-            exe = os.path.join(tmp, "Godot_v4.5.2-stable_linux.x86_64")
+            exe = os.path.join(tmp, "Godot_v4.6.3-stable_linux.x86_64")
             self.assertTrue(os.path.isfile(exe))
             if os.name != "nt":
                 self.assertTrue(os.access(exe, os.X_OK))
@@ -175,6 +175,13 @@ class TestRun(unittest.TestCase):
             port = s.getsockname()[1]
             s.listen()
             self.assertTrue(run.port_in_use(port))
+
+    def test_scenario_path(self):
+        # this repo's scenarios/ first, then the asset repo's traces (by name, as live_scenario.py finds them)
+        self.assertEqual(run.scenario_path("full_game_to_portal"),
+                         os.path.join(ROOT, "scenarios", "full_game_to_portal.txt"))
+        self.assertEqual(run.scenario_path("game_flow"), "game_flow")
+        self.assertTrue(os.path.isabs(run.scenario_path("my_game.txt")))   # MPF runs in game/
 
     def test_wait_for_port_log_marker(self):
         with tempfile.TemporaryDirectory() as d:
@@ -218,7 +225,17 @@ class TestRun(unittest.TestCase):
         self.assertEqual(["game", ".", "-c", "config,hw_virtual,free_play", "-t"], run.mpf_args("virtual"))
         self.assertEqual(["game", ".", "-c", "config,hw_virtual", "-t"], run.mpf_args("virtual", free_play=False))
         self.assertEqual(["game", ".", "-c", "config,hw_proc"], run.mpf_args("proc", text_ui=True))
-        self.assertEqual(["game", ".", "-c", "config,hw_virtual", "-t", "-X"], run.mpf_args("virtual", "zuse"))
+        self.assertEqual(["game", ".", "-c", "config,hw_virtual_le", "-t", "-X"], run.mpf_args("virtual", "zuse"))
+
+    def test_mpf_args_machine(self):
+        """Pro by default; the VPW table and the ROM traces are the LE."""
+        self.assertEqual("config,hw_proc_le", run.mpf_args("proc", machine="le")[3])
+        self.assertEqual("config,hw_proc,fiber_optics", run.mpf_args("proc", fiber_optics=True)[3])
+        self.assertEqual("config,hw_vpx,free_play", run.mpf_args("vpx")[3])
+        self.assertEqual("config,hw_vpx_pro,free_play", run.mpf_args("vpx", machine="pro")[3])
+        self.assertEqual("config,hw_virtual,free_play", run.mpf_args("virtual", machine="pro")[3])
+        for name in ("hw_proc_le", "hw_vpx_pro", "hw_virtual_le", "fiber_optics"):
+            self.assertTrue(os.path.exists(os.path.join(ROOT, "game", "config", name + ".yaml")), name)
 
     def test_xvfb_only_without_display(self):
         with mock.patch.dict(os.environ, {"GODOT": sys.executable}):

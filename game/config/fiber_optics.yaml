@@ -1,0 +1,11 @@
+#config_version=6
+
+# Drive the ramp light tubes (fiber optics) on a Pro, where they are off by default (machine_pro.yaml). Given after
+# the hardware overlay:   mpf game . -c config,hw_proc,fiber_optics   (or: python scripts/run.py --fiber-optics)
+# On the P-ROC the aux bus writes also need proc_ramp_tubes: 1 (hw_proc_le.yaml).
+
+machine_vars:
+  fiber_optics:
+    initial_value: 1
+    value_type: int
+    persist: false

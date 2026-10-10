@@ -1,0 +1,128 @@
+Patch to GDE GoZen (github.com/VoylinsGamedevJourney/gde_gozen) at f9448619, applied by scripts/build_gozen.sh
+(git apply ignores this text): asks FFmpeg for <codec>_nvmpi (the Jetson's hardware decoder) first and falls back
+to software; SConstruct lean=yes. Hardware decoding tested on Jetson AGX Orin, L4T R36.4.3 / JetPack 6.2;
+Xavier NX (L4T R35) not tested yet. Software decoding: any Linux x86_64 / arm64.
+
+diff --git a/SConstruct b/SConstruct
+index 5e7fcdf..923d50c 100644
+--- a/SConstruct
++++ b/SConstruct
+@@ -34,10 +34,16 @@ if "linux" in platform:
+         LIBPATH=["ffmpeg/bin/lib", "ffmpeg/bin/lib64"],
+         LIBS=LIBS_COMMON,
+     )
+-    env.Append(LIBS=["tls", "ssl", "crypto", "vpx", "aom"])
+-
+-    if arch != "arm64":
+-        env.Append(LIBS=["z"])
++    # lean=yes: FFmpeg built without libvpx, libaom, LibreSSL and zlib (the Jetson build of
++    # Tron-Legacy-MPF-PuP, scripts/build_gozen.sh)
++    # (and with FFmpeg's assembly, whose static objects need -Bsymbolic to link into a shared library)
++    if ARGUMENTS.get("lean", "no") == "yes":
++        env.Append(LINKFLAGS=["-Wl,-Bsymbolic"])
++    else:
++        env.Append(LIBS=["tls", "ssl", "crypto", "vpx", "aom"])
++
++        if arch != "arm64":
++            env.Append(LIBS=["z"])
+     env.Append(LIBS=["m", "pthread", "dl"])
+ elif "windows" in platform:
+     env.Append(LINKFLAGS=["-static"], LIBS=LIBS_COMMON)
+diff --git a/src/gozen_video.cpp b/src/gozen_video.cpp
+index bf3796f..83db3f7 100644
+--- a/src/gozen_video.cpp
++++ b/src/gozen_video.cpp
+@@ -1,6 +1,17 @@
+ #include "gozen_video.hpp"
+ 
+ 
++bool GoZenVideo::_open_decoder(const AVCodec* codec) {
++	av_codec_ctx = make_unique_ffmpeg<AVCodecContext, AVCodecCtxDeleter>(avcodec_alloc_context3(codec));
++	if (av_codec_ctx == NULL)
++		return false;
++	if (avcodec_parameters_to_context(av_codec_ctx.get(), av_stream->codecpar))
++		return false;
++	FFmpeg::enable_multithreading(av_codec_ctx.get(), codec);
++	return avcodec_open2(av_codec_ctx.get(), codec, NULL) == 0;
++}
++
++
+ int GoZenVideo::open(const String& video_path) {
+ 	if (loaded)
+ 		return _log_err("Already open");
+@@ -142,33 +153,36 @@ int GoZenVideo::open(const String& video_path) {
+ 			}
+ 		}
+ 	}
+-	if (!av_codec) { // Set to normal decoder.
+-		av_codec = avcodec_find_decoder(av_stream->codecpar->codec_id);
+-	}
+-	if (!av_codec) { // Couldn't find decoder so exit.
+-		close();
+-		return _log_err("Couldn't find decoder");
+-	}
+-
+-	// Allocate codec context for decoder.
+-	av_codec_ctx = make_unique_ffmpeg<AVCodecContext, AVCodecCtxDeleter>(avcodec_alloc_context3(av_codec));
+-	if (av_codec_ctx == NULL) {
+-		close();
+-		return _log_err("Failed alloc codec");
+-	}
+-
+-	// Copying parameters.
+-	if (avcodec_parameters_to_context(av_codec_ctx.get(), av_stream->codecpar)) {
+-		close();
+-		return _log_err("Couldn't init codec");
++	// Hardware decoder first (NVIDIA Jetson: FFmpeg patched by jetson-ffmpeg registers <codec>_nvmpi, which
++	// loads libnvmpi.so at run time). GOZEN_HWDEC=0 turns it off. Falls back to the software decoder when the
++	// hardware one is missing or fails to open (no libnvmpi.so, not a Jetson).
++	bool hw_tried = false;
++	if (!av_codec && OS::get_singleton()->get_environment("GOZEN_HWDEC") != "0") {
++		const AVCodecDescriptor* desc = avcodec_descriptor_get(av_stream->codecpar->codec_id);
++		const AVCodec* hw_codec = desc ? avcodec_find_decoder_by_name((String(desc->name) + "_nvmpi").utf8().get_data())
++									   : nullptr;
++		if (hw_codec) {
++			hw_tried = true;
++			if (_open_decoder(hw_codec)) {
++				av_codec = hw_codec;
++				UtilityFunctions::print("GoZen: hardware decoder ", hw_codec->name);
++			} else {
++				UtilityFunctions::print("GoZen: hardware decoder ", hw_codec->name, " unavailable, using software");
++				av_codec_ctx.reset();
++			}
++		}
+ 	}
+-
+-	FFmpeg::enable_multithreading(av_codec_ctx.get(), av_codec);
+-
+-	// Open codec - Video.
+-	if (avcodec_open2(av_codec_ctx.get(), av_codec, NULL)) {
+-		close();
+-		return _log_err("Couldn't open codec");
++	if (!av_codec || !av_codec_ctx) {
++		if (!av_codec || hw_tried)
++			av_codec = avcodec_find_decoder(av_stream->codecpar->codec_id);
++		if (!av_codec) { // Couldn't find decoder so exit.
++			close();
++			return _log_err("Couldn't find decoder");
++		}
++		if (!_open_decoder(av_codec)) {
++			close();
++			return _log_err("Couldn't open codec");
++		}
+ 	}
+ 
+ 	// Adjust resolution according to the aspect ratio.
+diff --git a/src/gozen_video.hpp b/src/gozen_video.hpp
+index ad7a971..9f40983 100644
+--- a/src/gozen_video.hpp
++++ b/src/gozen_video.hpp
+@@ -99,6 +99,8 @@ class GoZenVideo : public Resource {
+ 		if (debug)
+ 			UtilityFunctions::print("GoZenVideo: ", message, ".");
+ 	}
++	bool _open_decoder(const AVCodec* codec);
++
+ 	inline bool _log_err(String message) {
+ 		UtilityFunctions::printerr("GoZenVideo: ", message, "!");
+ 		return false;
