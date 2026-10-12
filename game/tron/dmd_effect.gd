@@ -10,6 +10,10 @@ extends RefCounted
 ## A picture is a res:// path: a picture of media/dmd/ is shown in HD as its twin of media/dmd_hd/ (tools/dmd_mode.gd);
 ## any other picture (redrawn art, a larger frame) is shown as it is, fitted to the 128x32 box. The data can be edited
 ## or replaced by hand: nothing else needs generating again.
+## Colour (HD with tools/dmd_mode.gd's colour on; scripts/dmd_color.py annotate()): the frames item's "color_frames"
+## (pictures of media/dmd_color/, frame for frame, drawn as they are), a text line's "color" and a rectangle's
+## "color_rgb" ("#rrggbb", in place of the text colour), a letter's "color_pic", the arcade reel's "color_cabinets",
+## "color_icons_a" and "color_icons_b". Recorded text lines take their colours from media/dmd_color/text_colors.json.
 ##
 ## One State per show of the effect (tron/dmd_effect_slide.gd): its time, the values MPF sent, the lines' text; build()
 ## turns it into a draw list for tron/dmd_screen.gd, the same pixels the node scene draws (tests/test_dmd_hd.py). The
@@ -25,6 +29,7 @@ const MEDIA := "res://media/dmd/"
 const MEDIA_HD := "res://media/dmd_hd/"
 const DMD_COLOR := Color(1, 0.45, 0.05, 1)
 const BOX := Rect2(0, 0, 128, 32)
+const NO_INK := Color(0, 0, 0, 0)        # an HD line in the text colour (else its own colour: the colourisation's)
 
 static var _data: Dictionary = {}       # effect.json path -> its items (parsed once)
 
@@ -69,6 +74,8 @@ static func picture(path: String, hd: bool) -> Texture2D:
 class State extends RefCounted:
 	var items: Array
 	var hd := false
+	var color := false             # the colourisation's colours (HD, tools/dmd_mode.gd color)
+	var color_scale := 2.0         # media/dmd_color/ pictures are this many times the classic ones
 	var elapsed_ms := 0.0
 	var seeked := false
 	var values := {}               # every event arg received (the panel, letters and reel read them)
@@ -84,6 +91,8 @@ class State extends RefCounted:
 	func _init(of: Array, hd_mode: bool) -> void:
 		items = of
 		hd = hd_mode
+		var dmd = DmdEffect._dmd()
+		color = hd and dmd != null and dmd.color
 		for i in items.size():
 			if items[i]["type"] == "frames":
 				_frames_item = i
@@ -189,12 +198,21 @@ class State extends RefCounted:
 						r = st["rect"]
 					if st.has("mod"):
 						mod = st["mod"]
-					if hd and it["name"] != "Background":
+					if color and it.has("color_rgb"):
+						c = Color(it["color_rgb"])
+					elif hd and it["name"] != "Background":
 						c = dmd.text_tint(c)
 					if r.size.x > 0 and r.size.y > 0:
 						out.append(["rect", r, c * mod])
 				"frames":
-					var f: Array = it["frames"][frame_index()] if it["frames"].size() else []
+					var k := frame_index()
+					var f: Array = it["frames"][k] if it["frames"].size() else []
+					if color and f.size() and it.has("color_frames") and k < it["color_frames"].size():
+						var ctex := _picture(it["color_frames"][k])
+						if ctex:
+							out.append(["tex", ctex, BOX, Color.WHITE])
+							_frame_text(out, str(f[0]).trim_prefix(MEDIA), dmd, true)
+							continue
 					var tex := _picture(f[0]) if f.size() else null
 					if tex:
 						out.append(["tex", tex, BOX, dmd.text_tint(DMD_COLOR) if hd else DMD_COLOR])
@@ -246,7 +264,7 @@ class State extends RefCounted:
 			return
 		if hd:
 			out.append(["htext", [lay["text"], lay["font"], lay["ascent"], lay["line_h"], lay["w"], it["flags"], 0, -1],
-				Transform2D(0.0, lay["pos"]), mod, Rect2()])
+				Transform2D(0.0, lay["pos"]), mod, Rect2(), Color(it["color"]) if color and it.has("color") else NO_INK])
 		else:
 			var font := RomText.font_file(lay["font"])
 			out.append(["ctext", font, lay["text"], lay["pos"] + Vector2(0, font.get_ascent(lay["line_h"])),
@@ -367,19 +385,20 @@ class State extends RefCounted:
 				state = ""
 			if state != str(s["name"]).left(-1).to_lower():
 				continue
-			var tex := _picture(s["pic"])
+			var colored: bool = color and s.has("color_pic")
+			var tex := _picture(s["color_pic"] if colored else s["pic"])
 			if tex == null:
 				continue
 			var classic := Color(s["color"][0], s["color"][1], s["color"][2], 1)
 			var rect := Rect2(s["x"], s["y"], 0, 0)
-			var dots := Vector2i((tex.get_size() / (float(dmd.frame_scale) if hd and tex.resource_path.begins_with(
-				MEDIA_HD) else 1.0)).round())
+			var dots := Vector2i((tex.get_size() / (color_scale if colored else (float(dmd.frame_scale) if hd and
+				tex.resource_path.begins_with(MEDIA_HD) else 1.0))).round())
 			rect.size = Vector2(dots)
 			if not hd:
 				out.append(["tex", tex, rect, classic])
 				continue
 			var level: float = classic.r          # orange times the palette level: the level
-			out.append(["tex", tex, rect, dmd.text_tint(Color(level, 0, 0, 1))])
+			out.append(["tex", tex, rect, Color.WHITE if colored else dmd.text_tint(Color(level, 0, 0, 1))])
 			if float(st["glow"]) > 0.0:
 				LetterPanel.start_glow(tex)
 				var glow := LetterPanel.made_glow(tex)
@@ -397,10 +416,14 @@ class State extends RefCounted:
 		var state := ArcadeReel.reel_state(frame, _int("scroll", 0), _int("blink", 0), 82, 4)
 		var x: int = state[0]
 		var blink_step: int = state[1]
-		var color: Color = dmd.text_tint(DMD_COLOR) if hd else DMD_COLOR
-		var icons_a: Array = it["icons_a"]
-		var icons_b: Array = it["icons_b"]
-		var cabinets: Array = it["cabinets"]
+		var tint: Color = dmd.text_tint(DMD_COLOR) if hd else DMD_COLOR
+		var colored: bool = color and it.has("color_cabinets") and it.has("color_icons_a") and it.has("color_icons_b")
+		var k := color_scale if colored else 1.0
+		if colored:
+			tint = Color.WHITE
+		var icons_a: Array = it["color_icons_a"] if colored else it["icons_a"]
+		var icons_b: Array = it["color_icons_b"] if colored else it["icons_b"]
+		var cabinets: Array = it["color_cabinets"] if colored else it["cabinets"]
 		for i in 3:
 			var cab := _int("cab%d" % i, 0)
 			var id := _int("icon%d" % i, 0)
@@ -408,21 +431,23 @@ class State extends RefCounted:
 				var bright := blink_step < 0 or (i == slot and blink_step % 2 == 0)
 				var icon := DmdEffect.picture(icons_a[id - 1] if bright else icons_b[id - 1], false)
 				if icon:
-					out.append(["tex", icon, Rect2(Vector2(x + 8, 5), icon.get_size()), color])
+					out.append(["tex", icon, Rect2(Vector2(x + 8, 5), icon.get_size() / k), tint])
 			var tex: Texture2D = DmdEffect.picture(cabinets[cab], false) if cab >= 0 and cab < cabinets.size() else null
 			if tex:
-				out.append(["tex", tex, Rect2(Vector2(x, 0), tex.get_size()), color])
-				x += tex.get_width() + 5
+				out.append(["tex", tex, Rect2(Vector2(x, 0), tex.get_size() / k), tint])
+				x += roundi(tex.get_width() / k) + 5
 			else:
 				x += 45 + 5
 
 	# ------------------------------------------------------------------ recorded text (tools/dmd_mode.gd FrameText)
 
-	func _frame_text(out: Array, key: String, dmd) -> void:
-		var color: Color = dmd.text_color
-		for r in dmd.frame_shapes().get(key, []):
+	## colored: over a colour picture, which keeps its rectangles; each line in its colour (text_colors.json).
+	func _frame_text(out: Array, key: String, dmd, colored := false) -> void:
+		var tcol: Color = dmd.text_color
+		var inks: Array = dmd.text_colors().get(key, []) if colored else []
+		for r in ([] if colored else dmd.frame_shapes().get(key, [])):
 			var lv := float(r[4]) / 15.0
-			var c := Color(color.r * lv, color.g * lv, color.b * lv, 1)
+			var c := Color(tcol.r * lv, tcol.g * lv, tcol.b * lv, 1)
 			var box := Rect2(float(r[0]), float(r[1]), float(r[2]) - float(r[0]) + 1, float(r[3]) - float(r[1]) + 1)
 			if int(r[5]):
 				out.append(["rect", box, c])
@@ -432,7 +457,10 @@ class State extends RefCounted:
 				out.append(["rect", Rect2(box.position + Vector2(0, 1), Vector2(1, box.size.y - 2)), c])
 				out.append(["rect", Rect2(box.position + Vector2(box.size.x - 1, 1), Vector2(1, box.size.y - 2)), c])
 		var clean := not RomTextHd.clean().is_empty()
-		for l in dmd.frame_text().get(key, []):
+		var lines: Array = dmd.frame_text().get(key, [])
+		for li in lines.size():
+			var l: Array = lines[li]
+			var ink: Color = Color(str(inks[li])) if li < inks.size() and inks[li] != null else NO_INK
 			var m := RomText.font_metrics(int(l[1]))
 			if m.is_empty():
 				continue
@@ -457,6 +485,6 @@ class State extends RefCounted:
 				var left := float(l[9])
 				var mid := pos + Vector2(float(l[5]) / 2.0, ascent - int(m["cap"]) / 2.0)
 				pos = mid + (pos - mid) * z
-				out.append(["htext", params, Transform2D(0.0, Vector2(z, z), 0.0, pos), mod, Rect2(left, 0, 128 - left, 32)])
+				out.append(["htext", params, Transform2D(0.0, Vector2(z, z), 0.0, pos), mod, Rect2(left, 0, 128 - left, 32), ink])
 				continue
-			out.append(["htext", params, Transform2D(0.0, pos), mod, Rect2()])
+			out.append(["htext", params, Transform2D(0.0, pos), mod, Rect2(), ink])

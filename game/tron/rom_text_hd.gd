@@ -18,6 +18,7 @@ const RomTextHd = preload("res://tron/rom_text_hd.gd")
 
 const HD_DIR := "res://fonts/hd/"
 const GROUP := "dmd_hd_text"     # every line, redrawn when the service menu changes the glow or size (restyle())
+const INK_GLOW := 0.5            # a line in its own colour glows half as much: white text would blur
 const CELL_PLANE := 0xE000
 const LEVEL_PLANE := 0xE000
 
@@ -248,6 +249,7 @@ class Line extends RefCounted:
 	var flags := 0                   # 2 = centred, 4 = right aligned, else left (tron/rom_text.gd rom_flags)
 	var first := 0                   # clean fonts: only the characters first.. (count) of the line are drawn,
 	var count := -1                  # where they sit in the whole line (-1: to the end)
+	var ink := Color(0, 0, 0, 0)     # its own colour (the colourisation's, tron/dmd_effect.gd), else the text colour
 
 	## As RomTextHd.set_line(); false when nothing changed.
 	func set_line(s: String, id: int, line_ascent: int, line_height: int, width := -1, align_flags := 0,
@@ -332,7 +334,7 @@ class Line extends RefCounted:
 		if text == "" or float(st["glow"]) <= 0.0:
 			return
 		item.draw_set_transform_matrix(xf)
-		var g: Color = st["glow_color"] * float(st["glow"])
+		var g: Color = (ink * INK_GLOW if ink.a > 0.0 else st["glow_color"]) * float(st["glow"])
 		g.a = 1.0
 		if not RomTextHd.clean().is_empty():
 			for r in [2.0, 1.5, 1.1, 0.75, 0.4]:   # widening outlines, added: soft light around the strokes
@@ -347,7 +349,7 @@ class Line extends RefCounted:
 		if text == "":
 			return
 		item.draw_set_transform_matrix(xf)
-		var color: Color = RomTextHd.style()["color"]
+		var color: Color = ink if ink.a > 0.0 else RomTextHd.style()["color"]
 		var levels: Array = RomTextHd.info(font_id).get("levels", [15])
 		if not RomTextHd.clean().is_empty():
 			var top := float(levels.max()) / 15.0

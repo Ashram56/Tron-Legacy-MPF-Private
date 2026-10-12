@@ -19,6 +19,9 @@ var _list: Array = []
 var _top: Node = null
 var _dirty := true
 var _clip := Rect2()
+var _colour := false                   # tools/dmd_mode.gd color: the colour pictures (2x) shown with crisp dots
+var _runs: Array[Node2D] = []          # colour: the base drawn as runs of the list, colour pictures nearest
+var _run_ranges: Array = []            # [from, to] of the list per run
 
 
 func _ready() -> void:
@@ -32,6 +35,7 @@ func _ready() -> void:
 	_vp.gui_disable_input = true
 	_vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_LINEAR if hd \
 		else Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+	_colour = hd and dmd.color
 	_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	add_child(_vp)
 	for k in 6:
@@ -103,6 +107,8 @@ func _process(_delta: float) -> void:
 	for k in range(3, 6):                 # the clipped layers sit at the clip's corner
 		_layers[k].position = _clip.position
 		RenderingServer.canvas_item_set_custom_rect(_layers[k].get_canvas_item(), true, Rect2(Vector2.ZERO, _clip.size))
+	if _colour:
+		_split_runs()
 	for layer in _layers:
 		layer.queue_redraw()
 	_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -115,10 +121,41 @@ static func _line(p: Array) -> RomTextHd.Line:
 	return l
 
 
-func _draw_layer(item: Node2D, k: int) -> void:
+## Colour: the base layer's entries in runs, each a child of the base with its own texture filter (nearest for the
+## pictures of media/dmd_color/, the HD default for the rest), drawn in the list's order.
+func _split_runs() -> void:
+	_run_ranges = []
+	var last = null
+	for i in _list.size():
+		var e: Array = _list[i]
+		var crisp: bool = e[0] == "tex" and e[1] != null and e[1].resource_path.begins_with("res://media/dmd_color/")
+		if crisp != last:
+			_run_ranges.append([i, i + 1, crisp])
+			last = crisp
+		else:
+			_run_ranges[-1][1] = i + 1
+	while _runs.size() < _run_ranges.size():
+		var run := Node2D.new()
+		var n := _runs.size()
+		run.draw.connect(func():
+			if n < _run_ranges.size():
+				_draw_layer(run, 0, _run_ranges[n][0], _run_ranges[n][1]))
+		_layers[0].add_child(run)
+		_runs.append(run)
+	for n in _runs.size():
+		if n < _run_ranges.size():
+			_runs[n].texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if _run_ranges[n][2] \
+				else CanvasItem.TEXTURE_FILTER_PARENT_NODE
+		_runs[n].queue_redraw()
+
+
+func _draw_layer(item: Node2D, k: int, from := 0, to := -1) -> void:
 	var zoom := k >= 3
 	var part := k % 3
-	for e in _list:
+	if _colour and item == _layers[0]:
+		return                             # drawn by its runs
+	for i in range(from, _list.size() if to < 0 else to):
+		var e: Array = _list[i]
 		match e[0]:
 			"tex":
 				if part == 0 and not zoom:
@@ -139,6 +176,8 @@ func _draw_layer(item: Node2D, k: int) -> void:
 				if zoom:
 					xf = Transform2D(0.0, -e[4].position) * xf
 				var line := _line(e[1])
+				if e.size() > 5:
+					line.ink = e[5]
 				if part == 0:
 					line.draw_cell(item, xf, e[3])
 				elif part == 1:

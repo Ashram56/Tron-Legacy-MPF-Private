@@ -570,6 +570,33 @@ def build_hd_frames(scale=None, deffs=None):
     return len(dmd_hd.upscale_files(jobs))
 
 
+def build_color_frames(deffs):
+    """game/media/dmd_color: the effects' pictures in the Serum colourisation's colours at 2x (scripts/dmd_color.py,
+    serum/trn_174h.cRZ), and their colours told in each effect's data (effect.json) for the HD mode's colour."""
+    import dmd_color
+    recorded = {info["slide"] for info in deffs.values() if info["source"] == "reference"}
+    dst = os.path.join(GAME, "media", "dmd_color")
+    info = dmd_color.build(os.path.join(GAME, "media", "dmd"), dst, dmd_color.COLOR_SCALE,
+                           os.path.join(ROOT, ".cache", "dmd_color"), crom=dmd_color.SERUM, recorded=recorded)
+    told = dmd_color.annotate(os.path.join(GAME, "media", "dmd"), dst, info, dmd_color.SERUM)
+    for p in glob.glob(os.path.join(dst, "deff_*", "f*.png")):     # nearest filtering: the 2x dots stay crisp
+        with open(p + ".import", "w", encoding="utf-8", newline="\n") as f:
+            f.write(COLOR_FRAME_IMPORT)
+    return len(glob.glob(os.path.join(dst, "deff_*", "*.png"))), told
+
+
+COLOR_FRAME_IMPORT = """[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+
+[params]
+
+compress/mode=0
+mipmaps/generate=false
+"""
+
+
 def main():
     import gen_fonts
     only_data = "--only-data" in sys.argv
@@ -584,6 +611,12 @@ def main():
         print("media: {} HD pictures in game/media/dmd_hd".format(build_hd_frames(deffs=data["deffs"])), flush=True)
     with open(os.path.join(GAME, "tron", "media_data.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=0, sort_keys=True)
+    import dmd_color
+    if hd and not only_data and os.path.exists(dmd_color.SERUM) and "--no-color" not in sys.argv:
+        print("media: {} colour pictures in game/media/dmd_color, {} effects in colour".format(
+            *build_color_frames(data["deffs"])), flush=True)
+    elif not only_data:
+        fsutil.remove_dir(os.path.join(GAME, "media", "dmd_color"))
     print("media: {} sound pools, {} display effects".format(len(data["pools"]), len(data["deffs"])))
 
 

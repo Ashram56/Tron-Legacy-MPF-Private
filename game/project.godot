@@ -39,6 +39,7 @@ dmd/preload_min_frames=40
 dmd/preload_small=true
 dmd/pool_slides=true
 dmd/renderer="data"
+dmd/color="on"
 
 [editor_plugins]
 

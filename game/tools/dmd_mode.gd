@@ -36,11 +36,19 @@ extends Node
 ## Service menu (HD only): ADJUSTMENTS > DISPLAY ADJUSTMENTS sets TEXT GLOW and TEXT SIZE while the game runs
 ## (tron/settings.py DisplaySettings). MPF sends them as the machine variables dmd_text_glow and dmd_text_size
 ## (percent; -1 = the value chosen above at start), and every HD text line is redrawn at once.
+## Colour (HD only, this private repository): --dmd-color=on|off (scripts/run.py --dmd-color; or TRON_DMD_COLOR, or
+## the project setting tron/dmd/color, default "on"). On, when the colour media is there (media/dmd_color/, made by
+## scripts/dmd_color.py from the Serum colourisation serum/trn_174h.cRZ), the display effects are drawn in the
+## colourisation's colours: their pictures, letters and arcade reel from media/dmd_color/ (2x, crisp dots), each text
+## line, panel block and recorded line in the colour the colourisation shows it (tron/dmd_effect.gd). Off: the HD
+## look above. The node scenes (tron/dmd/renderer="nodes") and the GMC slides (service menu, attract pages) keep the
+## text colour.
 ## Dot-matrix look (HD only): --dmd-dots=N (or TRON_DMD_DOTS=N, or tron/dmd/dots): round dots, N per DMD
 ## dot along each axis (1 = the 128x32 grid of the real display, 2 = 256x64, ...); 0 = off (default).
 
 const MEDIA := "res://media/dmd/"
 const MEDIA_HD := "res://media/dmd_hd/"
+const MEDIA_COLOR := "res://media/dmd_color/"
 const DOTS_SHADER := "res://tools/dmd_dots.gdshader"
 const TINTS := {"blue": ["#2a6cff", "#22b8ff"], "orange": ["#ff730d", "#ff9a3c"]}
 const DEFAULT_TINT := "blue"
@@ -58,6 +66,8 @@ var text_color := Color(DEFAULT_TEXT_COLOR)
 var glow_color := Color(DEFAULT_GLOW_COLOR)
 var glow := DEFAULT_GLOW
 var font := DEFAULT_FONT
+var color := false                # the Serum colours (HD, media/dmd_color/ there)
+var _text_colors = null           # media/dmd_color/text_colors.json: the colour of each recorded line
 var text_scale := DEFAULT_TEXT_SCALE
 var _start_glow := DEFAULT_GLOW            # the glow and text scale chosen at start (args, environment, project),
 var _start_text_scale := DEFAULT_TEXT_SCALE   # which the service menu's settings replace while they are set
@@ -74,6 +84,18 @@ var _preload_start := 0
 var _letters: Array[String] = []
 var _preloaded: Array[Resource] = []   # the preloaded ones: holding them keeps them in Godot's resource cache
 var _to_warm: Array[SpriteFrames] = []   # preloaded scenes' sprite frames whose HD frames are not built yet (_warm_scene)
+
+
+## The colour on or off: --dmd-color=on|off, then TRON_DMD_COLOR, then the project setting (default on).
+static func choose_color(args: PackedStringArray, env_color: String, setting: String) -> bool:
+	for a in args:
+		if a.begins_with("--dmd-color="):
+			var c := a.trim_prefix("--dmd-color=").to_lower()
+			if c in ["on", "off"]:
+				return c == "on"
+	if env_color.to_lower() in ["on", "off"]:
+		return env_color.to_lower() == "on"
+	return setting.to_lower() != "off"
 
 
 static func choose(args: PackedStringArray, env_mode: String, setting: String) -> String:
@@ -205,6 +227,8 @@ func _enter_tree() -> void:
 	_start_glow = glow
 	_start_text_scale = text_scale
 	font = choose_font(args, OS.get_environment("TRON_DMD_FONT"), str(ProjectSettings.get_setting("tron/dmd/font", "")))
+	color = choose_color(args, OS.get_environment("TRON_DMD_COLOR"), str(ProjectSettings.get_setting("tron/dmd/color",
+		"on"))) and FileAccess.file_exists(MEDIA_COLOR + "palettes.json")
 	if FileAccess.file_exists(MEDIA_HD + "scale.json"):
 		var info = JSON.parse_string(FileAccess.get_file_as_string(MEDIA_HD + "scale.json"))
 		if info is Dictionary:
@@ -215,7 +239,7 @@ func _enter_tree() -> void:
 	root.content_scale_stretch = Window.CONTENT_SCALE_STRETCH_FRACTIONAL
 	root.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	get_tree().node_added.connect(_on_node_added)
-	print("DMD: hd mode, window %s%s, text %s in %s x%.2f, glow %s x%.2f" % [root.size,
+	print("DMD: hd mode, window %s%s%s, text %s in %s x%.2f, glow %s x%.2f" % [root.size, ", Serum colour" if color else "",
 		(", dot-matrix look %d" % dots) if dots > 0 else "", text_color.to_html(false), font, text_scale, glow_color.to_html(false),
 		glow])
 
@@ -337,9 +361,9 @@ func _data_pictures(effect_path: String) -> Array[String]:
 		var pics: Array = []
 		match it["type"]:
 			"frames":
-				pics = it["frames"].map(func(f): return f[0])
+				pics = it["color_frames"] if color and it.has("color_frames") else it["frames"].map(func(f): return f[0])
 			"letters":
-				pics = it["sprites"].map(func(sp): return sp["pic"])
+				pics = it["sprites"].map(func(sp): return sp["color_pic"] if color and sp.has("color_pic") else sp["pic"])
 		for p in pics:
 			var big := MEDIA_HD + str(p).trim_prefix(MEDIA) if str(p).begins_with(MEDIA) else str(p)
 			out.append(big if ResourceLoader.exists(big) else str(p))
@@ -477,6 +501,14 @@ func frame_shapes() -> Dictionary:
 	if _frame_shapes == null:
 		_frame_shapes = _load_json(MEDIA_HD + "shapes.json")
 	return _frame_shapes
+
+
+## The colour of each line of a recorded frame's text (scripts/dmd_color.py annotate): {"deff_NNN/fNNN.png":
+## ["#rrggbb" or null, ...]}, line for line as frame_text().
+func text_colors() -> Dictionary:
+	if _text_colors == null:
+		_text_colors = _load_json(MEDIA_COLOR + "text_colors.json")
+	return _text_colors
 
 
 static func _load_json(path: String) -> Dictionary:

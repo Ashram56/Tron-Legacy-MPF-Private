@@ -15,6 +15,7 @@
     python scripts/run.py --dmd-font orbitron      # hd text font: rajdhani (default), orbitron, godot, rom (ROM dots) or a .ttf
     python scripts/run.py --dmd-text-scale 0.85    # hd text size (1 = the ROM's capital height; default 0.85)
     python scripts/run.py --dmd-tint orange        # hd in the original orange (default: Tron blue)
+    python scripts/run.py --dmd-color off          # hd without the Serum colourisation's colours (default: on)
     python scripts/run.py --dmd-text-color "#2a6cff" --dmd-text-glow 0.8   # hd text colour and glow (default 0.8; 0 = none)
 
 Godot's log goes to game/logs/godot.log. MPF runs in this terminal; quitting it (Ctrl+C or Esc in its text UI)
@@ -213,18 +214,20 @@ def engine_arg(gargs, *args):
 
 
 def dmd_args(gargs, dmd=None, dots=None, size=None, text_color=None, text_glow=None, tint=None, font=None,
-             text_scale=None):
+             text_scale=None, color=None):
     """Godot args for the DMD mode (game/tools/dmd_mode.gd): --dmd=hd|classic, --dmd-dots=N, the window
     size (Godot's --resolution WxH), the HD colours (--dmd-tint=blue|orange, --dmd-text-color=#RRGGBB,
     --dmd-text-glow=X), the HD text font (--dmd-font=rajdhani|orbitron|godot|rom|FILE) and its size
     (--dmd-text-scale=X). None leaves the choice to TRON_DMD... / the project settings (hd, blue, glow 0.8,
-    rajdhani, 0.85)."""
+    rajdhani, 0.85). color: the Serum colours on or off (--dmd-color=on|off; default on, HD only)."""
     if dmd:
         gargs = user_arg(gargs, "--dmd=" + dmd)
     if font:
         gargs = user_arg(gargs, "--dmd-font=" + (os.path.abspath(font) if os.path.isfile(font) else font))
     if tint:
         gargs = user_arg(gargs, "--dmd-tint=" + tint)
+    if color:
+        gargs = user_arg(gargs, "--dmd-color=" + color)
     if dots is not None:
         gargs = user_arg(gargs, "--dmd-dots={}".format(dots))
     if size:
@@ -408,6 +411,10 @@ def main(argv=None):
     p.add_argument("--dmd-tint", choices=["blue", "orange"],
                    help="hd only: DMD colour, text and effects: blue (default, Tron blue #2a6cff) or orange (the "
                         "original DMD's). Also TRON_DMD_TINT")
+    p.add_argument("--dmd-color", choices=["on", "off"],
+                   help="hd only: the display effects in the Serum colourisation's colours (on, default, when "
+                        "game/media/dmd_color was built from serum/trn_174h.cRZ) or in the tint (off). Also "
+                        "TRON_DMD_COLOR")
     p.add_argument("--dmd-text-color", metavar="#RRGGBB",
                    help="hd only: text colour (default the tint's: #2a6cff). Also TRON_DMD_TEXT_COLOR")
     p.add_argument("--dmd-text-glow", type=float, metavar="X",
@@ -434,7 +441,7 @@ def main(argv=None):
                scenario=args.scenario, seconds=args.seconds, text_ui=text_ui,
                free_play=args.free_play, godot_args=dmd_args(args.godot_args, args.dmd, args.dmd_dots, args.dmd_size,
                                                      args.dmd_text_color, args.dmd_text_glow, args.dmd_tint,
-                                                     args.dmd_font, args.dmd_text_scale),
+                                                     args.dmd_font, args.dmd_text_scale, args.dmd_color),
                trace=args.trace and os.path.abspath(args.trace))
 
 
