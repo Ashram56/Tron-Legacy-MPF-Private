@@ -55,7 +55,7 @@ import fsutil  # Windows/OneDrive-safe renames and folder wipes
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 COLORMAP = os.path.join(ROOT, "game", "tools", "dmd_colormap.json")
-VERSION = "7"            # bump when the colouring changes: the cache (.cache/dmd_hd) keys on it
+VERSION = "8"            # bump when the colouring changes: the cache (.cache/dmd_hd) keys on it
 TEXT_MATCH = 0.9
 COLOR_SCALE = 2          # colour frames: 2x (Scale2x, crisp, 256x64), the default; 8 = the smooth per-shade filter
 
@@ -269,11 +269,91 @@ SERUM = os.path.join(ROOT, "serum", "trn_174h.cRZ")
 _serum = None
 
 
+_v2 = ({}, None, "")    # serum_v2's export: (index, zip, key), per worker
+
+
 def _serum_init(crom):
-    global _serum
+    global _serum, _v2
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import serum
+    import serum_v2
     _serum = serum.Serum(crom)
+    index, z = serum_v2.load()
+    _v2 = (index, z, hashlib.sha1(json.dumps(index, sort_keys=True).encode()).hexdigest() if index else "")
+
+
+# ---------------------------------------------------------------------- Serum v2 (256x64)
+
+V2_PAD = 1              # dots round the live text's line boxes also blanked in a v2 picture (its HD lettering)
+V2_CAPTURE_PAD = 2      # dots round what only the capture frame shows (its text, its panel) blanked
+
+
+def v2_source(deff, name, shades, caps, source):
+    """(index entry, shades of the 128x32 frame it colours) of the 256x64 picture of an effect frame from the Serum
+    v2 export (scripts/serum_v2.py): the frame's own when the colourisation knows it, else that of the capture frame
+    that shows it (closest_capture: the colourisation knows the ROM's screens with their text and panel). None."""
+    import serum_v2
+    index = _v2[0]
+    e = index.get("%s/%s" % (deff, name))
+    if e and e["sha"] == serum_v2.shades_key(shades):
+        return e, shades
+    lit = sum(1 for a in shades if a)
+    if not lit:
+        return None
+    known = [(cs, index["%s/cap%04d" % (deff, k)]) for k, cs in enumerate(caps) if "%s/cap%04d" % (deff, k) in index]
+    if not known:
+        return None
+    cs, e = min(known, key=lambda c: closest_cost(shades, c[0]))
+    if sum(1 for a, c in zip(shades, cs) if a and a != c) > CAPTURE_HIDDEN * lit:
+        return None                     # another moment of the animation (or a wipe's mask)
+    if source == "reference" and any(a != c for i, (a, c) in enumerate(zip(shades, cs)) if i % 128 >= PANEL_X):
+        return None                     # the frame is a capture frame: only the same one shows it
+    return e, cs
+
+
+def _grow(dots, pad):
+    out = set()
+    for k in dots:
+        x, y = k % 128, k // 128
+        for j in range(max(0, y - pad), min(32, y + pad + 1)):
+            for i in range(max(0, x - pad), min(128, x + pad + 1)):
+                out.add(j * 128 + i)
+    return out
+
+
+def v2_picture(entry, shades, src, text):
+    """(256x64 picture, colour of each live text line) of an effect frame from its v2 picture (v2_source; src: the
+    shades of the frame the picture colours). Black where HD draws text live (the recorded lines' boxes, grown by
+    V2_PAD: the colourist's own lettering there goes), where only the capture frame shows something (its text and
+    its status panel, grown by V2_CAPTURE_PAD), and on a text screen (one lit shade right of the panel) every dot
+    the ROM leaves dark away from its lit dots (the colourisation's own lettering and credits). Each line's colour:
+    the most common colour of the picture under the line's ROM-lit dots."""
+    from collections import Counter
+    import serum_v2
+    img = serum_v2.picture(_v2[1], entry)
+    px = img.load()
+    text = text or {}
+    dots = set(text.get("dots", ()))
+    cols, blank = [], set()
+    for x0, y0, x1, y1 in text.get("lines", ()):
+        inside = [k for k in dots if x0 <= k % 128 <= x1 and y0 <= k // 128 <= y1]
+        seen = Counter(px[2 * (k % 128) + i, 2 * (k // 128) + j] for k in inside for i in (0, 1) for j in (0, 1))
+        seen = [(n, c) for c, n in seen.items() if sum(c) > 30]
+        cols.append("#%02x%02x%02x" % max(seen)[1] if seen else None)
+        blank |= _grow({y * 128 + x for y in range(max(0, y0), min(32, y1 + 1))
+                        for x in range(max(0, x0), min(128, x1 + 1))}, V2_PAD)
+    blank |= _grow(dots, V2_PAD)
+    blank |= _grow({k for k in range(4096) if src[k] and not shades[k]}, V2_CAPTURE_PAD)
+    lit = {shades[k] for k in range(4096) if shades[k] and k % 128 >= PANEL_X}
+    if len(lit) <= 1:
+        near = _grow({k for k in range(4096) if shades[k]}, 1)
+        blank |= {k for k in range(4096) if k not in near}
+    for k in blank:
+        x, y = 2 * (k % 128), 2 * (k // 128)
+        for i in (0, 1):
+            for j in (0, 1):
+                px[x + i, y + j] = (0, 0, 0)
+    return img, cols
 
 
 def scale2x_serum(vals, shades, w, h):
@@ -426,10 +506,12 @@ CAPTURE_HIDDEN = 0.25   # share of a frame's lit dots that its capture frame may
 def closest_capture(sh, caps):
     """The (shades, id, by CRC) of caps that shows sh: fewest of sh's lit dots in another shade, then fewest
     dots lit in the capture only (its text)."""
-    def cost(c):
-        cs = c[0]
-        return (sum(1 for a, b in zip(sh, cs) if a and a != b), sum(1 for a, b in zip(sh, cs) if b and not a))
-    return min(caps, key=cost)
+    return min(caps, key=lambda c: closest_cost(sh, c[0]))
+
+
+def closest_cost(sh, cs):
+    """How far a capture frame cs is from showing a frame sh (closest_capture)."""
+    return (sum(1 for a, b in zip(sh, cs) if a and a != b), sum(1 for a, b in zip(sh, cs) if b and not a))
 
 
 def colorize_capture(s, sh, cap, fid, exact, shade_pal):
@@ -491,7 +573,8 @@ def serum_deff(job):
             srcs.append(fp.read())
     key = hashlib.sha1(b"|".join([b"serum", VERSION.encode(), crom_key.encode(), str(f).encode(),
                                   str(serum.NEAR_MIN).encode(), str(serum.FIT_MAX).encode(),
-                                  str(CAPTURE_HIDDEN).encode(), source.encode(),
+                                  str(CAPTURE_HIDDEN).encode(), source.encode(), _v2[2].encode(),
+                                  str((V2_PAD, V2_CAPTURE_PAD)).encode(),
                                   json.dumps(texts, sort_keys=True).encode()] + srcs)).hexdigest()
     cached = os.path.join(cache, "serum_" + key) if cache else None
     names = [os.path.basename(p) for p in frames]
@@ -536,6 +619,13 @@ def serum_deff(job):
             near[k] = (sh, s.colorize_frame(sh, fid), s.palette(fid), fid)
         elif cap:                           # the capture's screen found by fit(): the frame's own art is not
             by_cap[k] = (sh,) + cap
+    # the Serum v2 pictures (256x64 art), where the export has one for the frame or its capture frame
+    v2src = [None] * len(shaded)
+    if _v2[0] and f == 2 and any(k.startswith(os.path.basename(folder) + "/") for k in _v2[0]):
+        from PIL import ImageSequence
+        cap_all = [serum.shades(c.convert("RGBA")) for c in ImageSequence.Iterator(Image.open(cap_path))] \
+            if cap_path else []
+        v2src = [v2_source(os.path.basename(folder), n, sh, cap_all, source) for n, (sh, _, _, _) in zip(names, shaded)]
     entry = None
     if by_cap:
         # the shade colours count the capture's Serum frames too (the dots where it shows other shades, its
@@ -543,7 +633,7 @@ def serum_deff(job):
         for sh, cs, fid, exact in by_cap.values():
             same = bytes(v if (v == c or not exact) else 0 for v, c in zip(sh, cs))
             found.append((same, s.colorize_frame(same, fid), s.palette(fid), True))
-    if found or near:
+    if found or near or any(v2src):
         pal = shade_colours(found + [v[:3] for v in near.values()], palette(deff))
         os.makedirs(dst, exist_ok=True)
         ids, line_colours = [], {}
@@ -560,16 +650,20 @@ def serum_deff(job):
                 ids.append(near[k][3])
             else:
                 vals, lut = sh, pal
-            vals, lut, sh, cols = clear_text(vals, lut, sh, texts.get(n), text_blanks(sh, texts))
+            if v2src[k]:
+                img, cols = v2_picture(v2src[k][0], sh, v2src[k][1], texts.get(n))
+            else:
+                vals, lut, sh, cols = clear_text(vals, lut, sh, texts.get(n), text_blanks(sh, texts))
+                img = rgb_image(scale_indices(vals, w, h, f, sh), lut)
             if cols:
                 line_colours[n] = cols
-            img = rgb_image(scale_indices(vals, w, h, f, sh), lut)
             img.save(os.path.join(dst, n), compress_level=6)
         exact = len(found) - len(by_cap)
         entry = {"palette": palette_hex(pal), "source": "serum", "serum_frames": exact,
                  "capture_frames": len(by_cap),
                  "near_frames": len(near), "shade_frames": len(frames) - exact - len(by_cap) - len(near),
-                 "serum_ids": [min(ids), max(ids)], "text_colors": line_colours}
+                 "v2_frames": sum(1 for v in v2src if v),
+                 "serum_ids": [min(ids), max(ids)] if ids else [], "text_colors": line_colours}
     if cached:
         tmp = cached + ".%d.tmp" % os.getpid()
         os.makedirs(tmp, exist_ok=True)
@@ -888,12 +982,34 @@ def capture_colours(s, deff):
     path = capture_path(deff)
     if not path:
         return []
+    v2 = capture_colours_v2(deff, path)
+    if v2:
+        return v2
     out = []
     for sh, fid, _ in capture_serum(s, path):
         idx = s.colorize_frame(sh, fid)
         for hit in s.find_sprites(sh, fid):
             s.draw_sprite(idx, hit)
         out.append((sh, idx, s.palette(fid)))
+    return out
+
+
+def capture_colours_v2(deff, path):
+    """capture_colours from the Serum v2 export (scripts/serum_v2.py), when it has the capture's frames: each dot's
+    colour the brightest of its 2x2 pixels in the 256x64 picture (as (shades, dot numbers, a colour per dot))."""
+    import serum
+    import serum_v2
+    from PIL import Image, ImageSequence
+    index, z = serum_v2.load()
+    out = []
+    for k, f in enumerate(ImageSequence.Iterator(Image.open(path))):
+        e = index.get("deff_%03d/cap%04d" % (deff, k))
+        if not e:
+            continue
+        px = serum_v2.picture(z, e).load()
+        cols = [max((px[2 * (d % 128) + i, 2 * (d // 128) + j] for i in (0, 1) for j in (0, 1)), key=sum)
+                for d in range(4096)]
+        out.append((serum.shades(f.convert("RGBA")), range(4096), cols))
     return out
 
 

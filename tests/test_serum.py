@@ -68,36 +68,28 @@ class TestSerumFrames(unittest.TestCase):
         return Image.open(os.path.join(GAME, "media", "dmd", "deff_%03d" % deff, name))
 
     def test_known_frames(self):
-        """The light cycle effect (deff 85) is in the colourisation frame for frame, the colour frames are its."""
+        """The light cycle effect (deff 85) is in the colourisation frame for frame, its colour frames are the
+        Serum v2 pictures (256x64 art) the export holds for them, black where HD draws its text."""
         from PIL import Image
+        import serum_v2
         s = load()
         s.reset()
         frames = sorted(glob.glob(os.path.join(GAME, "media", "dmd", "deff_085", "f*.png")))
         ids = [s.identify(serum.shades(Image.open(p))) for p in frames]
         self.assertNotIn(serum.NO_FRAME, ids)
-        s.reset()
-        for p in frames[:40]:                       # the build colours the effect's frames in order
-            s.identify(serum.shades(Image.open(p)))
-        sh = serum.shades(Image.open(frames[40]))
-        fid = s.identify(sh)
-        idx = s.colorize_frame(sh, fid)
-        for hit in s.find_sprites(sh, fid):
-            s.draw_sprite(idx, hit)
-        pal = s.palette(fid)
+        index, z = serum_v2.load()
+        e = index["deff_085/f040.png"]
+        self.assertEqual(serum_v2.shades_key(serum.shades(Image.open(frames[40]))), e["sha"])
+        want = serum_v2.picture(z, e)
         eff = json.load(open(os.path.join(GAME, "media", "dmd", "deff_085", "effect.json"), encoding="utf-8"))
         pics = [it["color_frames"] for it in eff["items"] if it["type"] == "frames"][0]
         got = Image.open(os.path.join(GAME, pics[40][len("res://"):])).convert("RGB")
-        # every dot the picture shows has the Serum colour of its dot or of a neighbour (Scale2x takes those; outside
-        # the frame is colour 0, as in libframeutil); the score (drawn live in HD) and the colourisation's own
-        # lettering are black in it (clear_text, text_blanks)
-        def near(x, y):
-            return {tuple(pal[idx[j * 128 + i]] if 0 <= i < 128 and 0 <= j < 32 else pal[0])
-                    for i, j in ((x, y), (x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1))}
-        lit = [(x, y, got.getpixel((x, y))) for y in range(64) for x in range(256) if got.getpixel((x, y)) != (0, 0, 0)]
-        self.assertGreater(len(lit), 1000)
-        self.assertEqual([], [v for v in lit if v[2] not in near(v[0] // 2, v[1] // 2)][:5])
-        got = Image.open(os.path.join(GAME, pics[0][len("res://"):]))
-        self.assertGreater(len(got.getcolors(4096) or []), 8)          # Serum colours, not a 16-shade ramp
+        self.assertEqual((256, 64), got.size)
+        w, g = want.load(), got.load()
+        shown = [(x, y) for y in range(64) for x in range(256) if g[x, y] != (0, 0, 0)]
+        self.assertGreater(len(shown), 4000)
+        self.assertEqual([], [(x, y) for x, y in shown if g[x, y] != w[x, y]][:5])
+        self.assertGreater(len(got.getcolors(1 << 16) or []), 200)      # HD art, not 64 colours
 
     def test_nearest_finds_the_art_under_the_text(self):
         """The shot award animation (deff 119) is in the colourisation only with its score drawn over it."""
@@ -177,6 +169,46 @@ class TestAgainstLibserum(unittest.TestCase):
                     self.assertEqual([pa[v] for v in a], [pb[v % 64] for v in b], g)
                 n += 1
         self.assertGreater(n, 2000)
+
+
+class TestV2Export(unittest.TestCase):
+    """serum/trn_174h_v2.zip: the Serum v2 colourisation's 256x64 frames (scripts/serum_v2.py export)."""
+
+    def test_export(self):
+        import serum_v2
+        from PIL import Image
+        index, z = serum_v2.load()
+        self.assertGreater(len(index), 7000)
+        caps = [k for k in index if "/cap" in k]
+        self.assertGreater(len(caps), 5000)
+        e = index["deff_119/f000.png"]               # the shot award: v1 knew it only under its text
+        self.assertEqual(serum_v2.shades_key(serum.shades(Image.open(os.path.join(
+            GAME, "media", "dmd", "deff_119", "f000.png")))), e["sha"])
+        self.assertEqual((256, 64), serum_v2.picture(z, e).size)
+
+    def test_build_uses_it(self):
+        """The colour build takes the v2 pictures for most frames (palettes.json v2_frames)."""
+        info = json.load(open(os.path.join(GAME, "media", "dmd_color", "palettes.json"), encoding="utf-8"))
+        v2 = sum(e.get("v2_frames", 0) for e in info["deffs"].values() if isinstance(e, dict))
+        self.assertGreater(v2, 2000)
+
+
+@unittest.skipUnless(_libserum() and os.path.exists(os.path.join(ROOT, "serum", "trn_174h.cROMc")),
+                     "libserum not built (scripts/serum_lib.py build, or TRON_LIBSERUM)")
+class TestV2AgainstLibserum(unittest.TestCase):
+    def test_export_is_libserums(self):
+        """The export's pictures are what libserum gives for the effect's frames from a fresh load."""
+        from PIL import Image
+        import serum_lib
+        import serum_v2
+        index, z = serum_v2.load()
+        ls = serum_lib.LibSerum(serum_lib.CROMC, flags=3)
+        self.addCleanup(ls.close)
+        for p in sorted(glob.glob(os.path.join(GAME, "media", "dmd", "deff_063", "f*.png"))):
+            fid, _, rgb = ls.colorize_v2(serum.shades(Image.open(p)))
+            e = index["deff_063/" + os.path.basename(p)]
+            self.assertEqual(e["id"], fid)
+            self.assertEqual(serum_v2.picture(z, e).tobytes(), rgb)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ too). Keep this file current like the public agent files.
 
 - 2026-10-04: no colourisation on the public `main`, no colour option left there; the HD DMD is Tron blue.
   Colour work stays in this repository, on its own branches, unless the owner says otherwise.
+- 2026-10-12: the Serum v2 file (`serum/trn_174h.cROMc`, 256x64 art) is the colourisation; v1 (`.cRZ`) colours only
+  what v2 does not know.
 - 2026-10-12: full colourisation of the HD DMD from the Serum file, on the data renderer (effect.json). All
   text is our own vector font (as in the main game), in the colour the colourisation gives each line; the
   colourisation's own lettering (credits, blink phases, scores) is not shown.
@@ -48,16 +50,29 @@ of both Serum branches (`scripts/pup_colormap.py`, `game/tools/dmd_colormap.json
   `palettes.json`); `dmd_effect.gd` uses the colour twins; `dmd_screen.gd` draws coloured pictures in runs
   (nearest filtering) between the ink layers. Colour off is the plain HD output
   (`tests/test_dmd_color.py` compares the two renders).
+- **Serum v2 first.** `serum/trn_174h.cROMc` (from Vincent, 2026-10-12) is a Serum v2 colourisation: 5,211
+  frames, each with a 256x64 version (new HD art: the film clips), 15 masks, 31 sprites. It is another
+  authoring than the v1 `.cRZ` (5,368 frames; only 433 CRCs in common). Only libserum reads a cROMc, so
+  `scripts/serum_v2.py export` runs libserum once over every effect's frames and its emulator capture (each from
+  a fresh load) and writes `serum/trn_174h_v2.zip` (index.json: frame -> sha of its 128x32 frame, Serum id,
+  picture): setup needs no libserum. Re-export after the effect frames change; the build skips stale entries.
+- The build (`serum_deff`) takes a frame's v2 picture: its own, else that of the closest capture frame (v2 knows
+  the ROM's screens with their score panel, which our frames leave to the live display). Black in it: the live
+  text's line boxes (grown 1 dot), what only the capture shows (grown 2 dots: its text, its panel), and on text
+  screens the dots away from the ROM's lit ones. Line and item colours are measured on the v2 pictures.
+  Coverage: 2,211 of 2,567 effect frames (86 effects); the rest is v1 (Scale2xPreserve) or PuP hues.
 - `scripts/serum_lib.py`: libserum itself through ctypes (`build` clones v2.8.0 and the libframeutil revision
   its `platforms/config.sh` pins, CMake), or `TRON_LIBSERUM`. `tests/test_serum.py` checks the Python port and
   its Scale2xPreserve against it (skipped without the library).
 
 ## Open
 
-1. Colour rotations (19 frames of the file) are not applied.
+1. Colour rotations are not applied (v1: 19 frames; v2 rotations not counted).
 2. The node renderer and the GMC slides (service menu, attract pages) keep the HD text colour.
-3. About 60 effects the colourisation does not know take PuP hues, not Serum colours.
-4. Text screens lose the colourisation's frame decorations on ROM-dark dots (deff 1's red and blue border).
+3. 356 effect frames have no v2 picture (v1 colours, or PuP hues for effects neither file knows).
+4. Text screens lose the colourisation's decorations on ROM-dark dots away from lit ones.
+5. v2 scenes (animations libserum plays itself from a trigger frame) are not used: the export colours the
+   ROM's own frames.
 
 ## What was learned
 
@@ -69,6 +84,9 @@ of both Serum branches (`scripts/pup_colormap.py`, `game/tools/dmd_colormap.json
   them through the effect's emulator capture (`reference_capture.gif`), by CRC as PinMAME does, or by screen
   fit when the capture's values differ from the colourist's game.
 - Colour frames at 2x with Scale2x stay crisp; the smooth 8x upscale made busy film clips soft.
+- A cROMc is libserum's compiled cache of a colourisation (LZ4 inside, does not compress further). Load it as
+  `altcolor/<rom>/<rom>.cROMc`; `Serum_Load` with FLAG_REQUEST_32P|64P; v2 frames come back as RGB565
+  (`frame32`, `frame64`, flags 1 and 2 say which were filled).
 - libserum v1 colourisations give 128x32 only (no 64-line frames); hosts upscale with libframeutil
   `Scale2xPreserve`: Scale2x on the colour indices, outside the frame is index 0, and a lit centre never takes
   an empty neighbour. `scale2x_serum` is that, checked against libserum dot for dot.
@@ -79,4 +97,4 @@ of both Serum branches (`scripts/pup_colormap.py`, `game/tools/dmd_colormap.json
 - Windows/OneDrive: identical frames share a cache key; keep the existing cache file when another worker
   holds it (`scripts/fsutil.py`).
 
-Last updated 2026-10-12 (full colourisation on the data renderer, our fonts for all text, libserum parity).
+Last updated 2026-10-12 (Serum v2 256x64 frames; full colourisation on the data renderer, our fonts for all text, libserum parity).

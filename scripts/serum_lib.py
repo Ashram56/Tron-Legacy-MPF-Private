@@ -23,6 +23,8 @@ import zipfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CACHE = os.path.join(ROOT, ".cache", "libserum")
 CROM = os.path.join(ROOT, "serum", "trn_174h.cRZ")
+# the Serum v2 colourisation (libserum's own compiled format): 256x64 frames besides the 128x32 ones
+CROMC = os.path.join(ROOT, "serum", "trn_174h.cROMc")
 # pinned: the libserum release line this was checked with, and the libframeutil revision its config.sh pins
 LIBSERUM_REF = "v2.8.0"
 LIBSERUM_URL = "https://github.com/PPUC/libserum.git"
@@ -31,6 +33,8 @@ LIBFRAMEUTIL_URL = "https://github.com/PPUC/libframeutil.git"
 FLAG_REQUEST_32P_FRAMES = 1
 FLAG_REQUEST_64P_FRAMES = 2
 IDENTIFY_NO_FRAME = 0xFFFFFFFF
+FLAG_RETURNED_32P_FRAME_OK = 1
+FLAG_RETURNED_64P_FRAME_OK = 2
 
 
 class FrameStruc(ctypes.Structure):
@@ -62,7 +66,7 @@ def library_path():
 class LibSerum:
     """One loaded colourisation in libserum (process-wide state: one at a time)."""
 
-    def __init__(self, crom=CROM, lib=None):
+    def __init__(self, crom=CROM, lib=None, flags=FLAG_REQUEST_32P_FRAMES):
         path = lib or library_path()
         if not path:
             raise OSError("libserum not found: scripts/serum_lib.py build, or set TRON_LIBSERUM")
@@ -79,11 +83,11 @@ class LibSerum:
         L.Serum_SetMaximumUnknownFramesToSkip.argtypes = [ctypes.c_uint8]
         # libserum reads altcolor/<rom>/<rom>.cRZ (or .cROM): a private copy, so no .cROMc lands next to ours
         self._dir = tempfile.mkdtemp(prefix="libserum_")
-        rom = os.path.splitext(os.path.basename(crom))[0]
+        rom = os.path.basename(crom).split(".")[0]
         os.makedirs(os.path.join(self._dir, rom))
         shutil.copyfile(crom, os.path.join(self._dir, rom, os.path.basename(crom)))
         L.Serum_SetGenerateCRomC(False)
-        p = L.Serum_Load(self._dir.encode() + b"/", rom.encode(), FLAG_REQUEST_32P_FRAMES)
+        p = L.Serum_Load(self._dir.encode() + b"/", rom.encode(), flags)
         if not p:
             raise OSError("libserum could not load %s" % crom)
         self.s = p.contents
@@ -100,6 +104,29 @@ class LibSerum:
         idx = bytes(ctypes.string_at(self.s.frame, len(frame)))
         pal = ctypes.string_at(self.s.palette, 64 * 3)
         return idx, [tuple(pal[3 * k:3 * k + 3]) for k in range(64)], fid
+
+    def colorize_v2(self, frame):
+        """A Serum v2 colourisation's frames of a frame of shades 0..15 (bytes), after Serum_Colorize: (frame id or
+        None, RGB bytes of the 128x32 frame or None, RGB bytes of the 256x64 frame or None). libserum gives them as
+        RGB565; each channel is widened by repeating its top bits."""
+        buf = (ctypes.c_uint8 * len(frame)).from_buffer_copy(frame)
+        ret = self.lib.Serum_Colorize(buf)
+        if ret == IDENTIFY_NO_FRAME:
+            return None, None, None
+        s = self.s
+        out = []
+        for ok, ptr, w, h in ((FLAG_RETURNED_32P_FRAME_OK, s.frame32, s.width32, 32),
+                              (FLAG_RETURNED_64P_FRAME_OK, s.frame64, s.width64, 64)):
+            if not (s.flags & ok) or not ptr or not w:
+                out.append(None)
+                continue
+            px = ctypes.cast(ptr, ctypes.POINTER(ctypes.c_uint16 * (w * h))).contents
+            rgb = bytearray(3 * w * h)
+            for k, v in enumerate(px):
+                r, g, b = v >> 11, (v >> 5) & 63, v & 31
+                rgb[3 * k:3 * k + 3] = bytes(((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2)))
+            out.append(bytes(rgb))
+        return s.frameID, out[0], out[1]
 
     def close(self):
         self.lib.Serum_Dispose()
