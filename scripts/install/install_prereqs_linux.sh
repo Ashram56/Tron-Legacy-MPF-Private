@@ -6,6 +6,7 @@
 #   scripts/install/install_prereqs_linux.sh --no-monitor    # ... without MPF Monitor (installed by default, with the Qt libraries it needs)
 #   scripts/install/install_prereqs_linux.sh --proc          # ... plus libpinproc/pypinproc and the P-ROC udev rule
 #   scripts/install/install_prereqs_linux.sh --dry-run       # print the plan, change nothing
+#   scripts/install/install_prereqs_linux.sh --pup-zip PACK.zip # the PuP Pack from its author's zip (file or URL)
 #   scripts/install/install_prereqs_linux.sh -- --skip-media # arguments after -- go to setup.py
 #
 # Options: --yes (no questions), --xvfb (Xvfb for running without a screen; automatic when there is no
@@ -33,7 +34,7 @@ UDEV_RULE=/etc/udev/rules.d/99-pinproc.rules
 DRY=0 YES=0 MONITOR=1 PROC=0 XVFB=0 SETUP=1 PY_ANY=0
 SETUP_ARGS=()
 
-usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -45,12 +46,26 @@ while [ $# -gt 0 ]; do
         --xvfb) XVFB=1 ;;
         --no-setup) SETUP=0 ;;
         --python-any) PY_ANY=1 ;;
+        --pup-zip) [ $# -ge 2 ] || { echo "--pup-zip needs a zip file or URL" >&2; exit 2; }
+                   TRON_PUP_ZIP="$2"; shift ;;
         -h|--help) usage; exit 0 ;;
         --) shift; SETUP_ARGS=("$@"); break ;;
         *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
     shift
 done
+
+# The PuP Pack from a zip (--pup-zip, or TRON_PUP_ZIP in the environment): the pack as its author publishes
+# it, instead of the pup_pack submodule (no access to that repository needed). setup.py extracts it.
+TRON_PUP_ZIP="${TRON_PUP_ZIP:-}"
+if [ -n "$TRON_PUP_ZIP" ]; then
+    case "$TRON_PUP_ZIP" in
+        http://*|https://*) ;;
+        *) [ -f "$TRON_PUP_ZIP" ] || { echo "PuP Pack zip not found: $TRON_PUP_ZIP" >&2; exit 2; }
+           TRON_PUP_ZIP="$(cd "$(dirname "$TRON_PUP_ZIP")" && pwd)/$(basename "$TRON_PUP_ZIP")" ;;
+    esac
+    export TRON_PUP_ZIP
+fi
 
 say() { printf '\n==> %s\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
@@ -66,6 +81,7 @@ run() {
 # this run only (git's url.insteadOf in the environment, inherited by setup.py), and handed to git's
 # credential helper, if one is set up (the macOS keychain, for example), so later `git pull`s work too.
 ASSETS_URL="${TRON_ASSETS_REPO:-https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git}"
+PUP_URL="${TRON_PUP_REPO:-https://github.com/Ashram56/Tron-LE-PuP-Pack.git}"   # the pup_pack submodule (optional, docs/pup/README.md)
 TOKEN="${TRON_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
 
 public_repo() { GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true git -c credential.helper= ls-remote "$1" HEAD >/dev/null 2>&1; }
@@ -81,6 +97,15 @@ github_auth() {
     # repository (a fine-grained one for other repositories, an expired one) would make git fail on it
     local url private=()
     for url in "$REPO_URL" "$ASSETS_URL"; do public_repo "$url" || private+=("$url"); done
+    # the PuP Pack (optional): a zip replaces the pup_pack submodule; its private repository needs a token given
+    # up front or credentials git already has, else the game installs without the pack (no prompt for it)
+    if [ -z "$TRON_PUP_ZIP" ] && ! public_repo "$PUP_URL"; then
+        if [ -n "$TOKEN" ]; then
+            private+=("$PUP_URL")
+        elif ! GIT_TERMINAL_PROMPT=0 git ls-remote "$PUP_URL" HEAD >/dev/null 2>&1; then
+            note "PuP Pack: $PUP_URL is private; installing without it (--pup-zip PACK.zip adds it, docs/pup/README.md)"
+        fi
+    fi
     if [ ${#private[@]} = 0 ]; then
         note "the repositories are public: no token needed"
         return
@@ -161,6 +186,16 @@ case "$(uname -m)" in
     *) if [ "$DRY" = 1 ]; then ARCH=x86_64; else die "unsupported CPU $(uname -m): x86_64 or arm64 only"; fi ;;
 esac
 
+# MPF Monitor needs PyQt6. Its arm64 wheels need glibc 2.39 from 6.8 on, so scripts/toolchain.py takes 6.7 on
+# Linux arm64, whose wheels need glibc 2.28 (JetPack 5: 2.31, JetPack 6: 2.35). Older than that, pip falls back
+# to a source build that fails, so the monitor is left out
+GLIBC="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{ print $2 }' || true)"
+if [ "$MONITOR" = 1 ] && [ "$ARCH" = aarch64 ] && [ -n "$GLIBC" ] \
+   && [ "$(printf '%s\n' 2.28 "$GLIBC" | sort -V | head -n 1)" != 2.28 ]; then
+    MONITOR=0
+    MONITOR_SKIPPED="glibc $GLIBC < 2.28 on arm64: PyQt6 has no wheel for it"
+fi
+
 # ------------------------------------------------------------------ packages per family
 
 case "$FAMILY" in
@@ -237,6 +272,17 @@ install_pkgs() {    # install the packages of "$@" that are missing
         if [ "$APT_UPDATED" = 0 ]; then root apt-get update -qq; APT_UPDATED=1; fi
         local i
         for i in "${!missing[@]}"; do missing[i]="$(apt_name "${missing[i]}")"; done
+        # libdecor (Wayland window decorations, optional for Godot) is not in Ubuntu 20.04 / JetPack 5
+        for i in "${!missing[@]}"; do
+            case "${missing[i]}" in libdecor-0-0*)
+                if have_tool apt-cache && ! apt_known "${missing[i]}"; then
+                    note "${missing[i]} is not in this release: skipped (Godot only uses it on Wayland)"
+                    unset 'missing[i]'
+                fi ;;
+            esac
+        done
+        missing=("${missing[@]}")
+        [ ${#missing[@]} -gt 0 ] || return 0
     fi
     note "missing: ${missing[*]}"
     if [ "$DRY" = 0 ] && [ "$YES" = 0 ] && [ -t 0 ]; then
@@ -283,8 +329,15 @@ apt_has_python311() {   # a final (not release candidate) python3.11 in the conf
 deadsnakes() {
     say "Python 3.11 from the deadsnakes PPA (Ubuntu)"
     install_pkgs software-properties-common
-    root add-apt-repository -y ppa:deadsnakes/ppa
+    # set -e is off in a function called with ||: check each step, or Ubuntu 22.04's own python3.11
+    # (3.11.0 release candidate) gets installed when the PPA could not be added
+    root add-apt-repository -y ppa:deadsnakes/ppa || return 1
     APT_UPDATED=0
+    if [ "$DRY" = 0 ]; then
+        root apt-get update -qq || return 1
+        APT_UPDATED=1
+        apt_has_python311 || return 1
+    fi
     install_pkgs "${PKG_PY[@]}"
 }
 
@@ -388,6 +441,7 @@ fi
 
 if [ "$SETUP" = 1 ]; then
     say "Workspace (scripts/setup.py)"
+    [ -z "${MONITOR_SKIPPED:-}" ] || note "MPF Monitor left out: $MONITOR_SKIPPED"
     ARGS=()
     [ "$MONITOR" = 1 ] || ARGS+=(--no-monitor)
     [ "$DRY" = 1 ] && ARGS+=(--dry-run)
@@ -424,6 +478,7 @@ if [ "$PROC" = 1 ]; then
     fi
 fi
 
+[ ! -f /etc/nv_tegra_release ] || "$HERE/install_jetson_hwdec.sh" $([ "$DRY" = 1 ] && echo --dry-run) || true  # PuP: Jetson decoder
 say "Done$([ "$DRY" = 1 ] && echo ' (dry run: nothing was changed)')"
 if [ "$SETUP" = 1 ]; then
     note "In $ROOT:"

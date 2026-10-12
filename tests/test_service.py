@@ -380,6 +380,59 @@ class TestAuditsAndAdjustments(ServiceCase):
         self.press("select")
         self.assertEqual(2, os_.adj[65])
 
+    def test_display_adjustments(self):
+        """ADJUSTMENTS > DISPLAY ADJUSTMENTS (not in the ROM): TEXT GLOW and TEXT SIZE of the HD display, in
+        percent. The value being edited goes to the display at once (machine vars dmd_text_glow, dmd_text_size,
+        which GMC receives); BACK puts the stored one back; SELECT stores it (persisted); the factory value and
+        RESET FACTORY SETTINGS leave the display's own start value (-1)."""
+        os_ = self.tron
+        var = self.machine.variables.get_machine_var
+        self.assertEqual((-1, -1), (var("dmd_text_glow"), var("dmd_text_size")))
+        self.enter()
+        self.goto("GO TO ADJUSTMENTS MENU")
+        texts = [i["text"] for i in self.top.items()]
+        self.assertEqual(texts.index("FEATURE ADJUSTMENTS") + 1, texts.index("DISPLAY ADJUSTMENTS"))
+        self.goto("DISPLAY ADJUSTMENTS")
+        self.assertEqual(("DISPLAY ADJUSTMENTS", "01 TEXT GLOW", "80% (FACTORY)"), self.shown[-1])
+        self.assertIn("(INSTALLED, FACTORY DEFAULT)", rom_draw.lines_of(self.svc.draw_items))
+        self.press("select")
+        self.press("plus")
+        self.assertEqual("> 90%", self.shown[-1][2])
+        self.assertEqual(90, var("dmd_text_glow"))                # previewed on the display
+        self.press("back")
+        self.assertEqual((80, -1), (os_.display_settings[1], var("dmd_text_glow")))
+        self.press("select")
+        for _ in range(9):
+            self.press("minus")
+        self.assertEqual("> OFF", self.shown[-1][2])             # stops at the bottom
+        self.press("select")
+        self.assertEqual((0, 0, 0), (os_.display_settings[1], var("dmd_text_glow"), var("dmd_text_glow_setting")))
+        self.assertTrue(self.machine.variables.machine_vars["dmd_text_glow_setting"]["persist"])
+        self.press("plus")                                        # TEXT SIZE
+        self.assertEqual(("DISPLAY ADJUSTMENTS", "02 TEXT SIZE", "85% (FACTORY)"), self.shown[-1])
+        self.press("select")
+        for _ in range(5):
+            self.press("plus")
+        self.press("select")
+        self.assertEqual((110, 110), (os_.display_settings[2], var("dmd_text_size")))
+        self.press("select")                                      # 110% is the top (owner's choice)
+        self.press("plus")
+        self.assertEqual("> 110%", self.shown[-1][2])
+        self.press("back")
+        self.press("select")                                      # back to the factory value: the start value
+        for _ in range(5):
+            self.press("minus")
+        self.press("select")
+        self.assertEqual((85, -1), (os_.display_settings[2], var("dmd_text_size")))
+        self.press("select")                                      # leaving while editing drops the preview
+        self.press("plus")
+        self.assertEqual(90, var("dmd_text_size"))
+        self.press("back")
+        self.press("back")
+        self.assertEqual(-1, var("dmd_text_size"))
+        self.svc.factory_reset()
+        self.assertEqual((80, -1), (os_.display_settings[1], var("dmd_text_glow")))
+
     def test_installs_and_factory_reset(self):
         os_ = self.tron
         self.enter()
@@ -482,7 +535,8 @@ class TestPersistence(TronTestCase):
 
     def _get_mock_data(self):
         return {"machine_vars": {"balls_per_game": {"value": 1, "persist": True},
-                                 "tilt_warnings": {"value": 0, "persist": True}},
+                                 "tilt_warnings": {"value": 0, "persist": True},
+                                 "dmd_text_glow_setting": {"value": 120, "persist": True}},
                 "tron_audits": {"counters": {8: 40, 9: 2}, "extra": {"score_total": 1000}}}
 
     def test_settings_and_audits_survive_power_cycle(self):
@@ -496,6 +550,12 @@ class TestPersistence(TronTestCase):
         self.hit_and_release_switch("s_start_button")
         self.advance_time_and_run(2)
         self.assertEqual(1, self.machine.game.balls_per_game)     # adj 31 drives MPF's game
+
+    def test_display_settings_survive_power_cycle(self):
+        """DISPLAY ADJUSTMENTS: the stored text glow reaches the display at start (machine var dmd_text_glow)."""
+        self.assertEqual(120, self.tron.display_settings[1])
+        self.assertEqual(120, self.machine.variables.get_machine_var("dmd_text_glow"))
+        self.assertEqual(-1, self.machine.variables.get_machine_var("dmd_text_size"))
 
     def test_override_is_not_stored(self):
         adj = self.tron.adj

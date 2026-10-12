@@ -1,8 +1,9 @@
 extends Control
 ## The service menu screen (tron/service.py) drawn the way the ROM draws it: the event arg `draw` is a list
 ## of tron/rom_draw.py items, drawn in order over black:
-## - {"t", "f", "x", "y", "a"}: text t in ROM font f (game/fonts), baseline row y, a = flags (1 left edge at
-##   x, 2 centred on x, 4 right edge at x), measured as the ROM measures it (RomText.rom_width);
+## - {"t", "f", "x", "y", "a", "l"}: text t in ROM font f (game/fonts), baseline row y, a = flags (1 left edge
+##   at x, 2 centred on x, 4 right edge at x), measured as the ROM measures it (RomText.rom_width), at palette
+##   level l (0-15, default 15);
 ## - {"i", "x", "y"}: ROM image i (assets/mpf_package/media/rom_images_all.zip, "%04d.png"), top left at x, y;
 ## - {"r": [x, y, w, h], "l"}: a filled rectangle at palette level l (0-15).
 ## Everything is tinted with the DMD colour; in the HD mode (tools/dmd_mode.gd) with the DMD text colour, the
@@ -62,7 +63,7 @@ func _draw_items(items: Array) -> void:
 		if not d is Dictionary:
 			continue
 		if d.has("t"):
-			_add_text(str(d["t"]), int(d["f"]), int(d["x"]), int(d["y"]), int(d.get("a", 2)))
+			_add_text(str(d["t"]), int(d["f"]), int(d["x"]), int(d["y"]), int(d.get("a", 2)), int(d.get("l", 15)))
 		elif d.has("i"):
 			var tex := texture(int(d["i"]))
 			if tex:
@@ -82,7 +83,7 @@ func _draw_items(items: Array) -> void:
 			add_child(rect)
 
 
-func _add_text(s: String, font_id: int, x: int, y: int, flags: int) -> void:
+func _add_text(s: String, font_id: int, x: int, y: int, flags: int, level: int = 15) -> void:
 	var m: Dictionary = RomText.font_metrics(font_id)
 	if m.is_empty():
 		return
@@ -113,8 +114,10 @@ func _add_text(s: String, font_id: int, x: int, y: int, flags: int) -> void:
 		label.self_modulate = Color(1, 1, 1, 0)
 		label.set_meta("dmd_text_hd", true)            # drawn by the child: not a plain label (dmd_mode.gd)
 		var line := RomTextHd.new()
-		line.set_line(shown, font_id, int(m["ascent"]), line_h)
+		line.set_line(shown, font_id, int(m["ascent"]), line_h, w, flags)
 		label.add_child(line)
+	if level < 15:                                   # a dimmed palette (e.g. deff 4 after its first 30 s)
+		label.modulate = Color(level / 15.0, level / 15.0, level / 15.0, 1)
 	add_child(label)
 
 

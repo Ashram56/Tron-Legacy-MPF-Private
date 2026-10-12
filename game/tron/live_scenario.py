@@ -17,7 +17,10 @@ SETTLE = 0.1
 TROUGH_SWITCHES = (18, 19, 20, 21)  # tron_ref's 4-ball trough: MPF's trough device owns these switches
 RANDOM_SEED = 1974                  # tests/tron_test.py; live play stays unseeded
 BUTTONS = {"left": "s_left_flipper", "right": "s_right_flipper", "tilt": "s_plumb_bob_tilt",
-           "start": "s_start_button", "tournament": "s_tournament_start"}
+           "start": "s_start_button", "tournament": "s_tournament_start",
+           # the coin door (states_ref's `button` names; coindoor -1 opens the door, 0 closes it)
+           "back": "s_service_back", "minus": "s_service_minus", "plus": "s_service_plus",
+           "select": "s_service_select", "slam": "s_slam_tilt", "coindoor": "s_coin_door_open", "coin": "s_coin"}
 
 
 class LiveScenario:

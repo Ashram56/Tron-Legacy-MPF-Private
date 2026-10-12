@@ -6,6 +6,7 @@ import os
 import socket
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from unittest import mock
@@ -17,7 +18,7 @@ import run  # noqa: E402
 import setup  # noqa: E402
 import toolchain as tc  # noqa: E402
 
-RELEASES = "https://github.com/godotengine/godot/releases/download/4.5.2-stable/"
+RELEASES = "https://github.com/godotengine/godot/releases/download/4.6.3-stable/"
 
 
 class TestHost(unittest.TestCase):
@@ -59,12 +60,12 @@ class TestVenv(unittest.TestCase):
 
 class TestGodot(unittest.TestCase):
     CASES = [  # os, arch, zip, executable in tools/godot/
-        ("windows", "x86_64", "Godot_v4.5.2-stable_win64.exe.zip", ["Godot_v4.5.2-stable_win64.exe"]),
-        ("windows", "arm64", "Godot_v4.5.2-stable_windows_arm64.exe.zip", ["Godot_v4.5.2-stable_windows_arm64.exe"]),
-        ("macos", "x86_64", "Godot_v4.5.2-stable_macos.universal.zip", ["Godot.app", "Contents", "MacOS", "Godot"]),
-        ("macos", "arm64", "Godot_v4.5.2-stable_macos.universal.zip", ["Godot.app", "Contents", "MacOS", "Godot"]),
-        ("linux", "x86_64", "Godot_v4.5.2-stable_linux.x86_64.zip", ["Godot_v4.5.2-stable_linux.x86_64"]),
-        ("linux", "arm64", "Godot_v4.5.2-stable_linux.arm64.zip", ["Godot_v4.5.2-stable_linux.arm64"]),
+        ("windows", "x86_64", "Godot_v4.6.3-stable_win64.exe.zip", ["Godot_v4.6.3-stable_win64.exe"]),
+        ("windows", "arm64", "Godot_v4.6.3-stable_windows_arm64.exe.zip", ["Godot_v4.6.3-stable_windows_arm64.exe"]),
+        ("macos", "x86_64", "Godot_v4.6.3-stable_macos.universal.zip", ["Godot.app", "Contents", "MacOS", "Godot"]),
+        ("macos", "arm64", "Godot_v4.6.3-stable_macos.universal.zip", ["Godot.app", "Contents", "MacOS", "Godot"]),
+        ("linux", "x86_64", "Godot_v4.6.3-stable_linux.x86_64.zip", ["Godot_v4.6.3-stable_linux.x86_64"]),
+        ("linux", "arm64", "Godot_v4.6.3-stable_linux.arm64.zip", ["Godot_v4.6.3-stable_linux.arm64"]),
     ]
 
     def test_urls_and_paths(self):
@@ -141,12 +142,12 @@ class TestUnpack(unittest.TestCase):
     def test_godot_zip_keeps_exec_bit(self):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as z:
-            info = zipfile.ZipInfo("Godot_v4.5.2-stable_linux.x86_64")
+            info = zipfile.ZipInfo("Godot_v4.6.3-stable_linux.x86_64")
             info.external_attr = 0o755 << 16
             z.writestr(info, "ELF")
         with tempfile.TemporaryDirectory() as tmp:
             setup.unzip(buf.getvalue(), tmp, "linux")
-            exe = os.path.join(tmp, "Godot_v4.5.2-stable_linux.x86_64")
+            exe = os.path.join(tmp, "Godot_v4.6.3-stable_linux.x86_64")
             self.assertTrue(os.path.isfile(exe))
             if os.name != "nt":
                 self.assertTrue(os.access(exe, os.X_OK))
@@ -175,6 +176,13 @@ class TestRun(unittest.TestCase):
             port = s.getsockname()[1]
             s.listen()
             self.assertTrue(run.port_in_use(port))
+
+    def test_scenario_path(self):
+        # this repo's scenarios/ first, then the asset repo's traces (by name, as live_scenario.py finds them)
+        self.assertEqual(run.scenario_path("full_game_to_portal"),
+                         os.path.join(ROOT, "scenarios", "full_game_to_portal.txt"))
+        self.assertEqual(run.scenario_path("game_flow"), "game_flow")
+        self.assertTrue(os.path.isabs(run.scenario_path("my_game.txt")))   # MPF runs in game/
 
     def test_wait_for_port_log_marker(self):
         with tempfile.TemporaryDirectory() as d:
@@ -218,13 +226,69 @@ class TestRun(unittest.TestCase):
         self.assertEqual(["game", ".", "-c", "config,hw_virtual,free_play", "-t"], run.mpf_args("virtual"))
         self.assertEqual(["game", ".", "-c", "config,hw_virtual", "-t"], run.mpf_args("virtual", free_play=False))
         self.assertEqual(["game", ".", "-c", "config,hw_proc"], run.mpf_args("proc", text_ui=True))
-        self.assertEqual(["game", ".", "-c", "config,hw_virtual", "-t", "-X"], run.mpf_args("virtual", "zuse"))
+        self.assertEqual(["game", ".", "-c", "config,hw_virtual_le", "-t", "-X"], run.mpf_args("virtual", "zuse"))
+
+    def test_mpf_args_machine(self):
+        """Pro by default; the VPW table and the ROM traces are the LE."""
+        self.assertEqual("config,hw_proc_le", run.mpf_args("proc", machine="le")[3])
+        self.assertEqual("config,hw_proc,fiber_optics", run.mpf_args("proc", fiber_optics=True)[3])
+        self.assertEqual("config,hw_vpx,free_play", run.mpf_args("vpx")[3])
+        self.assertEqual("config,hw_vpx_pro,free_play", run.mpf_args("vpx", machine="pro")[3])
+        self.assertEqual("config,hw_virtual,free_play", run.mpf_args("virtual", machine="pro")[3])
+        for name in ("hw_proc_le", "hw_vpx_pro", "hw_virtual_le", "fiber_optics"):
+            self.assertTrue(os.path.exists(os.path.join(ROOT, "game", "config", name + ".yaml")), name)
 
     def test_xvfb_only_without_display(self):
         with mock.patch.dict(os.environ, {"GODOT": sys.executable}):
             self.assertEqual(sys.executable, run.godot_command([], virtual_display=False)[0])
             with mock.patch.object(run.shutil, "which", return_value="/usr/bin/xvfb-run"):
                 self.assertEqual("xvfb-run", run.godot_command([], virtual_display=True)[0])
+
+    def test_captures_render_on_the_main_thread(self):
+        """opengl3 (the captures) with Godot's separate render thread (game/project.godot) wrote no frames."""
+        with mock.patch.dict(os.environ, {"GODOT": sys.executable}):
+            self.assertEqual(["--render-thread", "safe", "--rendering-driver", "opengl3"],
+                             run.godot_command(["--rendering-driver", "opengl3"], virtual_display=False)[3:])
+            self.assertNotIn("--render-thread", run.godot_command(["--x"], virtual_display=False))
+
+    def test_render_thread_switch(self):
+        """Godot's separate render thread is on by default; --no-render-thread or TRON_RENDER_THREAD=0 turns it off."""
+        with mock.patch.dict(os.environ, {"GODOT": sys.executable, "TRON_RENDER_THREAD": "0"}):
+            self.assertEqual(["--render-thread", "safe", "--x"], run.godot_command(["--x"], virtual_display=False)[3:])
+        with mock.patch.object(run, "run", return_value=0) as r:
+            run.main(["--no-render-thread", "--no-text-ui"])
+            self.assertEqual(["--render-thread", "safe"], r.call_args.kwargs["godot_args"][:2])
+            run.main(["--no-text-ui"])
+            self.assertNotIn("--render-thread", r.call_args.kwargs["godot_args"])
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux only")
+    def test_core_pinning(self):
+        """Godot's main thread alone on the last core, its other threads and MPF on the rest; off with TRON_PIN=0,
+        under Xvfb and below 4 cores."""
+        import subprocess
+        import threading
+        cpus = sorted(os.sched_getaffinity(0))
+        with mock.patch.dict(os.environ, {"TRON_PIN": "0"}):
+            self.assertIsNone(run.start_core_pinning(None, None, False))
+        self.assertIsNone(run.start_core_pinning(None, None, True))
+        if len(cpus) < 4:
+            self.assertIsNone(run.start_core_pinning(None, None, False))
+            return
+        script = "import threading, time; threading.Thread(target=time.sleep, args=(5,)).start(); time.sleep(5)"
+        godot = subprocess.Popen([sys.executable, "-c", script])
+        mpf = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"])
+        self.addCleanup(godot.kill)
+        self.addCleanup(mpf.kill)
+        stop = threading.Event()
+        worker = threading.Thread(target=run.core_pinning, args=(godot, mpf, stop, 0.1))
+        worker.start()
+        time.sleep(1.0)
+        stop.set()
+        worker.join()
+        tids = [int(t) for t in os.listdir("/proc/%d/task" % godot.pid)]
+        self.assertEqual({cpus[-1]}, os.sched_getaffinity(godot.pid))
+        self.assertEqual(set(cpus[:-1]), os.sched_getaffinity([t for t in tids if t != godot.pid][0]))
+        self.assertEqual(set(cpus[:-1]), os.sched_getaffinity(mpf.pid))
 
 
 class TestMediaStale(unittest.TestCase):

@@ -22,7 +22,7 @@ GAME = os.path.join(ROOT, "game")
 
 PYTHON_MIN = (3, 10)
 MPF_VERSION = "0.80.1"
-GODOT_VERSION = "4.5.2"
+GODOT_VERSION = "4.6.3"
 GMC_VERSION = "1.0.0"
 MPF_MONITOR_VERSION = "1.0.0"
 # ruamel.yaml.clib: 0.2.15 wheels name their metadata ruamel_yaml_clib, which MPF's pkg_resources (setuptools 72)
@@ -31,7 +31,13 @@ MPF_MONITOR_VERSION = "1.0.0"
 # fonttools: the HD mode's vector fonts (scripts/font_outline.py)
 REQUIREMENTS = ["mpf==" + MPF_VERSION, "pillow>=10.1", "fonttools>=4.40", "pytest",
                 'ruamel.yaml.clib==0.2.14; python_version < "3.13"']
-MONITOR_REQUIREMENTS = ["mpf-monitor==" + MPF_MONITOR_VERSION]
+# PyQt6 6.8+ ships Linux arm64 wheels for glibc 2.39+ only (Ubuntu 24.04); 6.7 has them for glibc 2.28+, which
+# JetPack 5 (2.31) and 6 (2.35) need: without a wheel pip tries the sdist, which needs qmake
+MONITOR_REQUIREMENTS = ["mpf-monitor==" + MPF_MONITOR_VERSION,
+                        'PyQt6>=6.4.2,<6.8; sys_platform == "linux" and platform_machine == "aarch64"']
+# Visual Pinball X (setup.py --vpx): olefile reads the table's script out of the .vpx (scripts/vpx_table.py),
+# pywin32 runs the TronMPF.Controller COM server VPX talks to (scripts/vpx_bridge.py, Windows only).
+VPX_REQUIREMENTS = ["olefile>=0.46", 'pywin32>=306; sys_platform == "win32"']
 # mpf-monitor 1.0.0 on PyPI (wheel and sdist) lacks its Qt Designer files, so `mpf monitor` stops with
 # "searchable_tree.ui: No such file". setup.py puts them in from the release's git tag.
 MPF_MONITOR_UI_FILES = ("events_table.ui", "inspector.ui", "searchable_table.ui", "searchable_tree.ui")
@@ -148,9 +154,10 @@ def godot_command(*args):
 # game/tron/media_data.json; all git-ignored) are made from: a change to any of these after a pull leaves
 # the workspace showing the old display effects until they are generated and imported again.
 MEDIA_INPUTS = [os.path.join("scripts", n) for n in ("gen_config.py", "gen_media.py", "gen_fonts.py", "rom_layout.py",
-                                                       "dmd_hd.py", "font_outline.py")] \
+                                                       "dmd_hd.py", "font_outline.py", "frame_text.py")] \
     + [os.path.join("assets", "mpf_package", n) for n in ("event_map.csv", "lamp_effects.csv")] \
-    + [os.path.join("assets", "code", "tron_game_decompiled_v2.c")]
+    + [os.path.join("assets", "code", "tron_game_decompiled_v2.c")] \
+    + [os.path.join("game", "tools", "bake_fonts.gd")]
 MEDIA_STAMP = os.path.join(GAME, "media", ".generated")
 
 

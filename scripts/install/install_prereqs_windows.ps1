@@ -11,6 +11,7 @@ or PowerShell 7. Run it from the repository:
     powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1
     powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1 -NoMonitor
     powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1 -DryRun
+    powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1 -PupZip PACK.zip
 
 Arguments that are not options of this script go to setup.py (for example --skip-media).
 
@@ -28,8 +29,11 @@ Prerequisites only, no setup.py.
 Use the downloaded installers even when winget is there.
 .PARAMETER Yes
 No questions.
+.PARAMETER PupZip
+The PuP Pack from a zip (a file or an https URL), as its author publishes it, instead of the pup_pack
+submodule: no access to that repository needed. Same as $env:TRON_PUP_ZIP; setup.py extracts it.
 #>
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$DryRun,
     [switch]$Monitor,
@@ -38,11 +42,12 @@ param(
     [switch]$NoSetup,
     [switch]$NoWinget,
     [switch]$Yes,
+    [string]$PupZip,
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$SetupArgs
 )
 
 $ErrorActionPreference = 'Stop'
-# Run from a clone, it sets up that clone. Run on its own (irm ... | iex, README "Install"), it first clones the
+# Run from a clone, it sets up that clone. Run on its own (& ([scriptblock]::Create((irm ...) -join [char]10)), README "Install"), it first clones the
 # repository into $env:TRON_DIR (default ~\Tron-Legacy-MPF-Private, outside OneDrive), branch $env:TRON_BRANCH (default
 # main), from $env:TRON_REPO; an existing clone gets a git pull.
 $Clone = -not ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot '..\setup.py')))
@@ -50,6 +55,16 @@ $Root = if (-not $Clone) { Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
         elseif ($env:TRON_DIR) { $env:TRON_DIR } else { Join-Path $HOME 'Tron-Legacy-MPF-Private' }
 $RepoUrl = if ($env:TRON_REPO) { $env:TRON_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-MPF-Private.git' }
 $RepoBranch = if ($env:TRON_BRANCH) { $env:TRON_BRANCH } else { 'main' }
+# The PuP Pack from a zip (-PupZip or $env:TRON_PUP_ZIP) instead of the pup_pack submodule: setup.py reads
+# $env:TRON_PUP_ZIP; a file is given to it as a full path
+if (-not $PupZip) { $PupZip = $env:TRON_PUP_ZIP }
+if ($PupZip) {
+    if ($PupZip -notmatch '^https?://') {
+        if (-not (Test-Path -LiteralPath $PupZip -PathType Leaf)) { throw "PuP Pack zip not found: $PupZip" }
+        $PupZip = (Resolve-Path -LiteralPath $PupZip).ProviderPath
+    }
+    $env:TRON_PUP_ZIP = $PupZip
+}
 
 # The last Python 3.11 release with Windows installers (later 3.11 releases are source-only security fixes)
 $PyOrgVersion = '3.11.9'
@@ -133,6 +148,8 @@ function Find-Git {
 # for this run only (git's url.insteadOf in the environment, inherited by setup.py), and handed to git's
 # credential helper (Git Credential Manager), so later `git pull`s work too.
 $AssetsUrl = if ($env:TRON_ASSETS_REPO) { $env:TRON_ASSETS_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git' }
+# the pup_pack submodule (optional, docs/pup/README.md)
+$PupUrl = if ($env:TRON_PUP_REPO) { $env:TRON_PUP_REPO } else { 'https://github.com/Ashram56/Tron-LE-PuP-Pack.git' }
 
 function Test-RepoAccess([string]$GitExe, [string]$Url, [switch]$Anonymous) {
     # no prompt of any kind: GIT_TERMINAL_PROMPT for git's own, GCM_INTERACTIVE for Git Credential Manager's
@@ -159,6 +176,14 @@ function Invoke-GitHubAuth([string]$GitExe) {
     # only the repositories nobody can read without a login need the token: a token that cannot read a public
     # repository (a fine-grained one for other repositories, an expired one) would make git fail on it
     $private = @(@($RepoUrl, $AssetsUrl) | Where-Object { -not (Test-RepoAccess $GitExe $_ -Anonymous) })
+    # the PuP Pack (optional): a zip replaces the pup_pack submodule; its private repository needs a token given
+    # up front or credentials git already has, else the game installs without the pack (no prompt for it)
+    if (-not $PupZip -and -not (Test-RepoAccess $GitExe $PupUrl -Anonymous)) {
+        if ($token) { $private += $PupUrl }
+        elseif (-not (Test-RepoAccess $GitExe $PupUrl)) {
+            Write-Note "PuP Pack: $PupUrl is private; installing without it (-PupZip PACK.zip adds it, docs/pup/README.md)"
+        }
+    }
     if ($private.Count -eq 0) {
         Write-Note 'the repositories are public: no token needed'
         return
@@ -233,6 +258,12 @@ try {
         if (-not $DryRun -and -not (Find-Git)) { throw 'Git is still missing after the install' }
     }
     $authGit = Find-Git
+    # setup.py runs `git` from the PATH (to fetch the submodules): a Git found only at its install folder is
+    # put on this session's PATH
+    if ($authGit -and -not (Get-Command git -ErrorAction SilentlyContinue)) {
+        $env:Path = (Split-Path -Parent $authGit) + ';' + $env:Path
+        Write-Note "Git added to this session's PATH: $(Split-Path -Parent $authGit)"
+    }
     Invoke-GitHubAuth $(if ($authGit) { $authGit } else { 'git' })
 
     # ---------------------------------------------------------------- Python 3.11

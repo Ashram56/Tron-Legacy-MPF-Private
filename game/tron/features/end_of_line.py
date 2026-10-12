@@ -233,7 +233,7 @@ class EndOfLine(Feature):
             if not self.aab_left:
                 self.aab_count += 1
                 self.aab_left = self.aab_count + 2
-                if os_.multiball_start(os_.balls_in_play() + 1, 312, 187):   # multiball_add_balls
+                if os_.multiball_start(os_.rom_balls_in_play() + 1, 312, 187):   # multiball_add_balls
                     self.restart_from_grace()
                     added = True
             self.mask = 7

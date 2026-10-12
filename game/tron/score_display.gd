@@ -56,6 +56,15 @@ func update(settings: Dictionary, kwargs: Dictionary = {}) -> void:
 	_apply()
 
 
+## Back to time 0 with no values (tron/dmd_slide.gd reuses slides).
+func pool_reset() -> void:
+	_elapsed_ms = 0.0
+	_seeked = false
+	_values = {}
+	_received_ms = 0.0
+	_apply()
+
+
 func seek_ms(t: float) -> void:
 	_seeked = true
 	_elapsed_ms = t

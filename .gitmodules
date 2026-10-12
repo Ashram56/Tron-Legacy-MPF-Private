@@ -2,3 +2,7 @@
 	path = assets
 	url = https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git
 	shallow = true
+[submodule "pup_pack"]
+	path = pup_pack
+	url = https://github.com/Ashram56/Tron-LE-PuP-Pack.git
+	shallow = true

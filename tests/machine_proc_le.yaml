@@ -1,0 +1,7 @@
+#config_version=6
+
+# What "mpf game . -c config,hw_proc_le" loads, as one file for the unit tests (MpfTestCase takes a single
+# config file): tests/test_proc.py.
+config:
+  - ../game/config/config.yaml
+  - ../game/config/hw_proc_le.yaml

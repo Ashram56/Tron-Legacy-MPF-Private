@@ -1,0 +1,7 @@
+# The trouble-spot clips (docs/performance.md): scenario (scenarios/ or assets/rules/traces/) and seconds.
+# Together about 2 minutes; each was picked for the spots it reproduces (measured on the Xavier NX, 2026-10):
+# - start-up, the largest DMD animation loads (Light Cycle multiball intro deff 85, 86: ~1 s and ~2.2 s on the
+#   main thread with lossless frames) and three PuP screens switching video at once (3 times)
+light_cycle_multiball_repeat_and_stack 45
+# - Portal multiball: deff 141 and 143 loads (~0.9 s each) and a three-screen video switch
+portal_multiball 75

@@ -80,8 +80,9 @@ class Display:
 
     # ------------------------------------------------------------------ start / stop
 
-    def start(self, deff_id, hold=False, refresh=True, run_seconds=None, sounds=None, **args):
+    def start(self, deff_id, hold=False, refresh=True, run_seconds=None, sounds=None, media=False, **args):
         """run_seconds: the run length when this call's variant differs from the recorded one.
+        media: a held deff still plays its own sounds and lamp effects (deff 4, which runs until stopped).
         sounds: [(offset s, fn)] the deff's own sound calls when the rules make them (snd_play2 with an
         argument, a counter), played instead of the capture's sounds once the deff gets the display."""
         os_ = self.os
@@ -120,7 +121,7 @@ class Display:
             forced = os_.forced.get("deff_{}_seconds".format(deff_id))
             if forced:
                 seconds = forced.pop(0) or seconds   # random length (e.g. the arcade reel), from a test
-            if not hold:
+            if not hold or media:
                 # the deff's own code starts its media once it runs: nothing if it is replaced at once
                 self._sound_handles.append(os_.machine.clock.schedule_once(
                     lambda: self._media(deff_id, seconds, sounds), 0))

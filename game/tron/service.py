@@ -26,6 +26,7 @@ import re
 from mpf.core.mode import Mode
 
 from tron import rom_draw as rd
+from tron.hw_numbers import sam_number
 from tron.settings import service_data
 
 BUTTONS = {"s_service_back": "back", "s_service_minus": "minus", "s_service_plus": "plus",
@@ -37,6 +38,10 @@ CHARSET = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?.,'-&"
 CUSTOM_MESSAGE_LEN = 16
 CUSTOM_PRICING_MAX = 10
 LOCK_KEY = "service"
+# items of this game that the ROM does not have, by menu (docs/rom_differences.md): DISPLAY ADJUSTMENTS,
+# the HD display's text glow and size (tron/settings.py DisplaySettings)
+GAME_ITEMS = {"ADJUSTMENTS": [{"text": "DISPLAY ADJUSTMENTS", "kind": "screen", "submenu": None,
+                               "shown_only_if": None}]}
 LIGHT_PRIORITY = 1000000
 
 # ROM draw constants
@@ -76,6 +81,7 @@ ICONS = {
     "START TOURNAMENT": 146, "STOP TOURNAMENT": 148, "VIEW TOURNAMENT DATA": 150, "SIGN MESSAGES A-B": 152,
     "INSTALL REDEMPTION SYSTEM": 154, "CHANGE REDEMPTION SETTINGS": 156, "UNINSTALL REDEMPTION SYSTEM": 158,
     "VIEW REDEMPTION DATA": 160,
+    "DISPLAY ADJUSTMENTS": 88,
     "GAME-SPECIFIC TESTS": 1429, "3-BANK MOTOR TEST": 1431, "DISC MOTOR TEST": 1433,
     "RECOGNIZER MOTOR TEST": 1435, "FIBER OPTIC LIGHT TUBE TEST": 1437,
 }
@@ -161,7 +167,7 @@ def rom_label(device):
 
 def hw_number(device):
     """Sort key: the device's SAM number (dedicated "D" numbers after the matrix)."""
-    number = str(device.config.get("number", ""))
+    number = sam_number(device)
     return (1, int(number[1:])) if number[1:].isdigit() and number[0] == "D" else (
         (0, int(number)) if number.isdigit() else (2, 0))
 
@@ -238,6 +244,7 @@ class MenuScreen(Screen):
 
     def items(self):
         items = [i for i in service_data()["menus"][self.title] if self.svc.visible(i)]
+        items += GAME_ITEMS.get(self.title, [])
         # the game adds its items (GAME-SPECIFIC TESTS) at run time: the tail items stay last
         tail = [i for i in items if i["kind"] in ("back", "exit", "help")]
         return [i for i in items if i not in tail] + tail
@@ -326,7 +333,7 @@ SW_TEXT_X = 50 + (128 - 50) // 2                   # the texts' centre right of 
 
 def switch_cell(switch):
     """(block, index) of a switch in the switch test grid: matrix 1-64 in block 0, dedicated D<n> in block 1."""
-    number = str(switch.config.get("number", ""))
+    number = sam_number(switch)
     if number.isdigit() and 1 <= int(number) <= 64:
         return 0, int(number) - 1
     if number[:1] == "D" and number[1:].isdigit() and 1 <= int(number[1:]) <= 32:
@@ -339,7 +346,7 @@ def switch_number_text(switch):
     cell = switch_cell(switch)
     if cell and cell[0] == 1:
         return "DEDICATED #{}".format(cell[1] + 1)
-    return "SWITCH #{}".format(switch.config.get("number", "?"))
+    return "SWITCH #{}".format(sam_number(switch) or "?")
 
 
 def switch_grid(machine):
@@ -465,7 +472,7 @@ class CoilTestScreen(ListScreen):
         return self.coils
 
     def entry_lines(self, entry):
-        return [rom_label(entry), "#{}".format(entry.config["number"])]
+        return [rom_label(entry), "#{}".format(sam_number(entry))]
 
     def enter(self):
         if self.cycling:
@@ -503,7 +510,7 @@ def lamp_grid(lights):
     out = [rd.image(LAMP_LINE, 0, 0)] + [rd.image(LAMP_ROW, 1, 1 + 3 * r) for r in range(10)]
     out.append(rd.image(LAMP_LINE, 0, 31))
     for light in lights:
-        n = int(light.config["number"]) - 1
+        n = int(sam_number(light)) - 1
         out.append(rd.image(LAMP_CELL, 2 + 3 * (n & 7), 1 + 3 * (n >> 3)))
     return out
 
@@ -599,7 +606,7 @@ class TroughTestScreen(Screen):
             x, y = 16 * step, 24 + step - 15
             switch = self.machine.switches[name]
             if sc.is_active(switch):
-                out += [rd.image(BALL, x, y), rd.text(str(switch.config["number"]), 0, x + 7, y + 9)]
+                out += [rd.image(BALL, x, y), rd.text(sam_number(switch), 0, x + 7, y + 9)]
         return out
 
     def button(self, name):
@@ -936,11 +943,14 @@ def dump_audits(os_, path):
 
 class AdjustmentScreen(ListScreen):
     """STANDARD / FEATURE ADJUSTMENTS: MINUS / PLUS scroll; SELECT edits, MINUS / PLUS change the value by
-    the ROM step, SELECT stores it (MPF setting, persisted), BACK drops the change."""
+    the ROM step, SELECT stores it (MPF setting, persisted), BACK drops the change. DISPLAY ADJUSTMENTS
+    (added by this game) edits the HD display's settings (tron/settings.py DisplaySettings) the same way,
+    showing the value being edited on the display as it changes."""
 
-    def __init__(self, svc, title, group):
+    def __init__(self, svc, title, group, adj=None):
         super().__init__(svc, title)
-        self.numbers = self.os.adj.menu(group)
+        self.adj = self.os.adj if adj is None else adj
+        self.numbers = self.adj.menu(group)
         self.editing = None
         self.blink_on = True
         self.handle = None
@@ -949,7 +959,7 @@ class AdjustmentScreen(ListScreen):
         return self.numbers
 
     def entry_lines(self, num):
-        adj = self.os.adj
+        adj = self.adj
         value = adj[num] if self.editing is None else self.editing
         mark = " (FACTORY)" if value == adj.default(num) else ""
         edit = "> " if self.editing is not None else ""      # the value being edited
@@ -960,7 +970,7 @@ class AdjustmentScreen(ListScreen):
         on row 14, the value in font 8 on row 22 (blinking while it is edited) and on row 29, fitted,
         (INSTALLED, FACTORY DEFAULT) / (INSTALLED) for the stored value, (FACTORY DEFAULT) for the default."""
         num = self.current()
-        adj = self.os.adj
+        adj = self.adj
         value = adj[num] if self.editing is None else self.editing
         out = [rd.fit("{} #{}".format(self.title, num), 64, 5, SMALL_FONTS),
                rd.fit(adj.info[num]["name"], 64, 14, (6, 2, 0))]
@@ -984,28 +994,37 @@ class AdjustmentScreen(ListScreen):
         self.blink_on = True
 
     def leave(self):
+        if self.editing is not None:
+            self._preview(self.current(), None)
         self._stop_blink()
 
     def button(self, name):
         num = self.current()
         if self.editing is None:
             if name == "select":
-                self.editing = self.os.adj[num]
+                self.editing = self.adj[num]
                 self.handle = self.machine.clock.schedule_once(self._blink, BLINK_SECONDS / 2)
                 self.refresh()
             else:
                 super().button(name)
             return
         if name in ("minus", "plus"):
-            self.editing = self.os.adj.step(num, self.editing, 1 if name == "plus" else -1)
+            self.editing = self.adj.step(num, self.editing, 1 if name == "plus" else -1)
+            self._preview(num, self.editing)
         elif name == "select":
-            self.os.adj[num] = self.editing
+            self.adj[num] = self.editing
             self.editing = None
             self._stop_blink()
         elif name == "back":
             self.editing = None
+            self._preview(num, None)
             self._stop_blink()
         self.refresh()
+
+    def _preview(self, num, value):
+        """DISPLAY ADJUSTMENTS: the value being edited shows on the display at once (None: the stored one)."""
+        if hasattr(self.adj, "preview"):
+            self.adj.preview(num, value)
 
 
 # ---------------------------------------------------------------------------------------------- utilities
@@ -1274,15 +1293,15 @@ class ServiceMode(Mode):
         return sorted(coils, key=lambda c: hw_number(c))
 
     def lamp_groups(self, how):
-        lights = sorted((light for light in self.machine.lights.values() if str(light.config.get("number", ""))
-                         .isdigit()), key=lambda light: int(light.config["number"]))
+        lights = sorted((light for light in self.machine.lights.values() if sam_number(light).isdigit()
+                         and not light.config.get("platform")), key=lambda light: int(sam_number(light)))
         if how == "single":
-            return [(rom_label(lt), [lt], "LAMP #{}".format(lt.config["number"])) for lt in lights]
+            return [(rom_label(lt), [lt], "LAMP #{}".format(sam_number(lt))) for lt in lights]
         if how == "all":
             return [("ALL LAMPS", lights, "")]
         groups = {}
         for light in lights:
-            n = int(light.config["number"]) - 1
+            n = int(sam_number(light)) - 1
             key = n // 8 + 1 if how == "column" else n % 8 + 1
             groups.setdefault(key, []).append(light)
         return [("{} {}".format(how.upper(), k), v, "{} OF {}".format(i + 1, len(groups)))
@@ -1346,6 +1365,7 @@ class ServiceMode(Mode):
                 lambda: big_two("AUDIT DUMP", "COMPLETE") + [rd.fit(CONTINUE, 64, 27, SMALL_FONTS)]),
             "STANDARD ADJUSTMENTS": lambda: AdjustmentScreen(self, text, "standard"),
             "FEATURE ADJUSTMENTS": lambda: AdjustmentScreen(self, text, "feature"),
+            "DISPLAY ADJUSTMENTS": lambda: AdjustmentScreen(self, text, None, os_.display_settings),
             "ENTER CUSTOM MESSAGE": lambda: CustomMessageScreen(self),
             "SET DATE/TIME": lambda: DateTimeScreen(self),
             "SET CUSTOM PRICING": lambda: CustomPricingScreen(self),
@@ -1378,8 +1398,10 @@ class ServiceMode(Mode):
             hs.reset_all() if mask == 3 else hs.reset(mask)
 
     def factory_reset(self):
-        """RESET FACTORY SETTINGS: adjustments to their defaults, audits cleared, high scores and credits."""
+        """RESET FACTORY SETTINGS: adjustments to their defaults (the display's too), audits cleared, high
+        scores and credits."""
         self.os.adj.factory_reset()
+        self.os.display_settings.factory_reset()
         self.os.audits.reset_all()
         self.reset_high_scores(3)
         self.reset_credits()

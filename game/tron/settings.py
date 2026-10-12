@@ -240,3 +240,76 @@ class Audits:
         minutes = seconds / 60.0
         i = max(n for n, low in enumerate(GAME_TIMES) if minutes >= low)
         return GAME_TIME_COUNTER + i
+
+
+# ---------------------------------------------------------------------------------------------- HD display
+
+# The HD DMD's text glow and size (not in the ROM: docs/rom_differences.md), as percentages:
+# {item: (name, stored machine var, live machine var, factory, min, max, step)}. The factory values are
+# tools/dmd_mode.gd's defaults (glow 0.8, text scale 0.85).
+DISPLAY_ITEMS = {
+    1: ("TEXT GLOW", "dmd_text_glow_setting", "dmd_text_glow", 80, 0, 300, 10),
+    2: ("TEXT SIZE", "dmd_text_size_setting", "dmd_text_size", 85, 50, 110, 5),
+}
+
+
+class DisplaySettings:
+    """DISPLAY ADJUSTMENTS (ADJUSTMENTS menu, added by this game): the HD DMD's text glow and text size, with
+    the interface of Adjustments (the adjustment editor uses either). The operator's value persists in
+    the stored machine var; the live machine var (not persisted, -1 = the value the display was started
+    with: --dmd-text-glow / --dmd-text-scale or their defaults) is what the display (tools/dmd_mode.gd)
+    follows, through GMC's machine variable monitor; preview() shows a value being edited there. A value
+    stored at its factory default leaves the display's own start value in place."""
+
+    def __init__(self, machine):
+        self.machine = machine
+        self.info = {num: {"name": spec[0], "min": spec[4], "max": spec[5], "step": spec[6]}
+                     for num, spec in DISPLAY_ITEMS.items()}
+        for num in DISPLAY_ITEMS:
+            self._show(num, self.stored(num))
+
+    def stored(self, num):
+        """The operator's value, None when unset or at the factory default."""
+        value = self.machine.variables.get_machine_var(DISPLAY_ITEMS[num][1])
+        return None if value is None or int(value) < 0 or int(value) == self.default(num) else int(value)
+
+    def _show(self, num, value):
+        self.machine.variables.set_machine_var(DISPLAY_ITEMS[num][2], -1 if value is None else int(value))
+
+    def default(self, num):
+        return DISPLAY_ITEMS[num][3]
+
+    def __getitem__(self, num):
+        value = self.stored(num)
+        return self.default(num) if value is None else value
+
+    def __setitem__(self, num, value):
+        key = DISPLAY_ITEMS[num][1]
+        value = int(value)
+        self.machine.variables.configure_machine_var(key, persist=True)
+        self.machine.variables.set_machine_var(key, -1 if value == self.default(num) else value)
+        self._show(num, self.stored(num))
+
+    def preview(self, num, value):
+        """The value being edited on the display; None = back to the stored one."""
+        self._show(num, self.stored(num) if value is None else
+                   (None if int(value) == self.default(num) else value))
+
+    def keys(self):
+        return sorted(DISPLAY_ITEMS)
+
+    def menu(self, group=None):
+        return self.keys()
+
+    def label(self, num, value=None):
+        value = self[num] if value is None else value
+        return "OFF" if num == 1 and value == 0 else "{}%".format(value)
+
+    def step(self, num, value, direction):
+        """MINUS / PLUS: one step, stopping at the ends of the range."""
+        info = self.info[num]
+        return min(info["max"], max(info["min"], value + info["step"] * direction))
+
+    def factory_reset(self):
+        for num in self.keys():
+            self[num] = self.default(num)

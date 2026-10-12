@@ -27,6 +27,8 @@ x-tron: &tron
     - /tmp/.X11-unix:/tmp/.X11-unix
   environment: &tron-env
     TRON_HW: ${TRON_HW:-virtual}
+    TRON_MACHINE: ${TRON_MACHINE:-}            # pro (default) or le: the machine's IO assignments
+    TRON_FIBER_OPTICS: ${TRON_FIBER_OPTICS:-}  # 1: drive the ramp light tubes on a Pro
     DISPLAY: ${DISPLAY:-:0}
 
 services:

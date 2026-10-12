@@ -114,6 +114,19 @@ func seek_ms(t: float) -> void:
 	_apply_time()
 
 
+## Back to the line of a slide just built (tron/dmd_slide.gd reuses slides): no text, time 0, first screen.
+func pool_reset() -> void:
+	_elapsed_ms = 0.0
+	_seeked = false
+	_use_alt = false
+	_screen_on = screens.has(0) if screens.size() else true
+	visible = _screen_on
+	modulate = Color(1, 1, 1, 1)
+	text = ""
+	_layout()
+	_apply_time()
+
+
 func _process(delta: float) -> void:
 	if not _seeked:
 		_elapsed_ms += delta * 1000.0
@@ -187,20 +200,23 @@ func _layout() -> void:
 	elif rom_flags & 4:
 		left = x + 1 - w
 	var line_h := int(m["ascent"]) + int(m["descent"])
-	add_theme_font_override("font", font_file(font_id))
-	add_theme_font_size_override("font_size", line_h)
-	add_theme_constant_override("line_spacing", 0)
+	if not hd():    # HD: the RomTextHd child draws the line and the label's own glyphs are hidden; giving it the
+		# ROM font again at every update re-themed and re-shaped it, about 25 ms per slide shown on a Xavier NX
+		add_theme_font_override("font", font_file(font_id))
+		add_theme_font_size_override("font_size", line_h)
+		add_theme_constant_override("line_spacing", 0)
 	position = Vector2(left, y - int(m["ascent"]) + 1)
 	size = Vector2(maxi(w, 1) + 2, line_h)
 	if hd():
-		_layout_hd(shown, font_id, int(m["ascent"]), line_h)
+		_layout_hd(shown, font_id, int(m["ascent"]), line_h, w)
 
 
-## HD mode: the line is drawn by a tron/rom_text_hd.gd child (vector outlines, text colour and glow); the
-## label itself only places it (its own glyphs are hidden).
-func _layout_hd(shown: String, font_id: int, ascent: int, line_h: int) -> void:
+## HD mode: the line is drawn by a tron/rom_text_hd.gd child (vector outlines or a clean font, text colour and
+## glow; w = the ROM's text width, the clean font's box); the label itself only places it (its own glyphs
+## are hidden).
+func _layout_hd(shown: String, font_id: int, ascent: int, line_h: int, w: int) -> void:
 	if _hd_text == null:
 		_hd_text = RomTextHd.new()
 		add_child(_hd_text, false, INTERNAL_MODE_FRONT)
 		self_modulate = Color(1, 1, 1, 0)
-	_hd_text.set_line(shown, font_id, ascent, line_h)
+	_hd_text.set_line(shown, font_id, ascent, line_h, w, rom_flags)

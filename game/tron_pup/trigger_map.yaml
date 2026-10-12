@@ -1,0 +1,136 @@
+# What the PuP Pack's trigger codes mean in this MPF game (read by game/tron_pup/engine.py).
+#
+# In Visual Pinball, PinUP Player watches PinMAME's DMD: D<n> fires when the pixels inside the purple
+# rectangle of PupCapture/<n>.bmp appear on the DMD. Here the rules tell us instead: the game posts
+# tron_deff_<id> when display effect <id> takes the DMD (game/tron/display.py), so each D<n> is mapped to the
+# display effect(s) whose frames contain that capture. scripts/pup/pup_captures.py did the matching (every frame
+# of every effect, its variants and the ROM's library animations, against the 98 captures) and writes the
+# report to docs/pup/captures.md; re-run it when the upstream DMD animations change.
+#
+# An event may carry a condition on its arguments: tron_deff_112{award==1}.
+# Synthetic events posted by game/tron_pup/mode.py:
+#   pup_boot          PuP player ready (D0=1, PinUP Player's start-up trigger)
+#   pup_power_up      first attract after power-up (D54: the boot screen "TRON L.E. V1.74")
+#   pup_attract_cycle every [pup] attract_cycle_seconds while attract runs (D1: TRON logo in the attract loop)
+
+dmd:
+  0: [pup_boot]
+  1: [tron_deff_1, pup_attract_cycle]     # TRON LEGACY logo of the attract loop (library anim 5)
+  2: ["player_added{num==1}"]             # "00" in player 1's score line: game started
+  3: [tron_deff_136]                      # find Flynn intro
+  4: [tron_deff_137]                      # Flynn found
+  5: [tron_deff_38]                       # MATCH
+  6: [tron_deff_1]                        # attract score display
+  7: [tron_deff_101, tron_deff_102, tron_deff_103]   # skill shot (all three share the frame)
+  8: [tron_deff_132]                      # extra ball lit
+  9: [tron_deff_133]                      # extra ball
+  10: [tron_deff_26]                      # shoot again
+  11: [tron_deff_108]                     # recognizer / disc access progress (also drawn by 130 at game over)
+  12: [tron_deff_71]                      # CLU intro
+  13: [tron_deff_74]                      # CLU total
+  14: [tron_deff_25]                      # BONUS (end of ball: drain)
+  15: [tron_deff_25]                      # bonus, second page
+  16: [tron_deff_75]                      # gem progress
+  17: [tron_deff_76]                      # gem intro
+  18: [tron_deff_78]                      # gem award (jackpot)
+  19: [tron_deff_79]                      # gem total (the same TOTAL frame is in zuse total, 99)
+  20: ["tron_deff_112{award==2}"]         # SUPER POPS
+  21: ["tron_deff_112{award==1}"]         # DOUBLE SCORING
+  22: ["tron_deff_112{award==4}"]         # SUPER SPINNERS
+  23: [tron_deff_55]                      # Daft Punk letters: "1 MORE TO LIGHT EX BALL"
+  24: [tron_deff_55]                      # Daft Punk letters: "1 MORE TO LIGHT MULTIBALL"
+  25: [tron_deff_55]                      # DAFT PUNK MULTIBALL IS LIT
+  26: [tron_deff_56]                      # end of line multiball intro
+  27: [tron_deff_61]                      # end of line total
+  28: [tron_deff_84]                      # light cycle multiball lit
+  29: [tron_deff_85]                      # light cycle multiball intro
+  30: [tron_deff_90]                      # light cycle total
+  31: [tron_deff_87, tron_deff_88]        # light cycle jackpot (and super jackpot, same frame)
+  32: [tron_deff_83]                      # light cycle progress
+  33: [tron_deff_113]                     # sea of simulation intro
+  34: [tron_deff_126]                     # sea of simulation total
+  35: [tron_deff_62]                      # quorra progress
+  36: [tron_deff_63]                      # quorra multiball lit
+  37: [tron_deff_64]                      # quorra multiball intro
+  38: [tron_deff_94]                      # zuse intro
+  39: [tron_deff_99]                      # zuse total
+  40: [tron_deff_97]                      # zuse jackpot (all targets), variant 0
+  41: [tron_deff_97]                      # zuse jackpot, variant 1
+  42: [tron_deff_70]                      # quorra total
+  43: [tron_deff_68]                      # quorra jackpot, variant 0
+  44: [tron_deff_68]                      # quorra jackpot, variant 2
+  45: [tron_deff_68]                      # quorra jackpot, variant 1
+  46: [tron_deff_109]                     # disc battle ready
+  47: [tron_deff_109]                     # disc battle ready, later frame
+  48: [tron_deff_111]                     # "n MORE TO START DISC MULTIBALL"
+  49: [tron_deff_46]                      # disc multiball intro, later frame
+  50: [tron_deff_48, tron_deff_49]        # DISC MULTIBALL JACKPOT
+  51: [tron_deff_51]                      # disc multiball total
+  52: [tron_deff_73]                      # CLU award (jackpot)
+  53: [tron_deff_20]                      # BALL SAVED
+  54: [pup_power_up]                      # boot screen TRON L.E. V1.74 (the game does not draw it)
+  55: ["player_added{num==2}"]            # "00" in player 2's score line
+  56: ["player_added{num==3}"]
+  57: ["player_added{num==4}"]
+  58: [tron_deff_69]                      # quorra super jackpot, variant 1
+  59: [tron_deff_69]                      # SUPER JACKPOT 1,000,000
+  60: [tron_deff_69]                      # quorra super jackpot, variant 0
+  61: [tron_deff_69]                      # quorra super jackpot, value page
+  62: [tron_deff_78]                      # gem award, second frame
+  63: [tron_deff_78]                      # gem award, value page
+  64: [tron_deff_106]                     # TRON completed
+  65: [tron_deff_100]                     # ZEN
+  66: [tron_deff_116, tron_deff_117, tron_deff_118, tron_deff_119, tron_deff_120, tron_deff_121, tron_deff_122,
+       tron_deff_123, tron_deff_124]      # sea of simulation stage value (the stage "jackpot")
+  67: [tron_deff_126]                     # sea of simulation total
+  68: [tron_deff_111]                     # disc battle clips (12 variants of the disc multiball progress)
+  69: [tron_deff_111]
+  70: [tron_deff_111]
+  71: [tron_deff_111]
+  72: [tron_deff_111]
+  73: [tron_deff_111]
+  74: [tron_deff_111]
+  75: [tron_deff_111]
+  76: [tron_deff_111]
+  77: [tron_deff_111]
+  78: [tron_deff_111]
+  79: [tron_deff_111]
+  80: [tron_deff_46]                      # disc multiball intro
+  81: [tron_deff_48, tron_deff_49]        # disc multiball jackpot clips (variants)
+  82: [tron_deff_48, tron_deff_49]
+  83: [tron_deff_48, tron_deff_49]
+  84: [tron_deff_48, tron_deff_49]
+  85: [tron_deff_48, tron_deff_49]
+  86: [tron_deff_48, tron_deff_49]
+  87: [tron_deff_48, tron_deff_49]
+  88: [tron_deff_119]                     # sea of simulation stage 4 (weak match: 53 %)
+  89: [tron_deff_52]                      # disc multiball restart
+  90: [tron_deff_53]                      # disc multiball restart running (countdown)
+  91: [tron_deff_21]                      # TILT
+  92: [tron_deff_140]                     # portal multiball intro
+  93: [tron_deff_140]                     # portal multiball intro, later frame
+  94: [tron_deff_142]                     # portal shot (jackpot)
+  95: [tron_deff_145]                     # portal total
+  96: [tron_deff_31]                      # PLAYER n / ENTER INITIALS (high score)
+  97: [tron_deff_32]                      # initials entry "HIGH SCORE n"
+  98: [tron_deff_54]                      # disc multiball restarted
+
+# W<n>: PinMAME switch n = the SAM switch number (game/config/rom/switches.yaml). Names, not numbers: the
+# P-ROC overlay renumbers the switches.
+switches:
+  1: s_tron_t
+  2: s_tron_r
+  3: s_tron_o
+  4: s_tron_n
+  7: s_zuse_z
+  8: s_zuse_u
+  11: s_video_game_eject
+  13: s_zuse_e
+  23: s_shooter_lane
+  48: s_zuse_s
+
+# Whole trigger rows replaced by MPF events (triggers.pup ID -> events).
+override:
+  # "Arcade Mystery" W11=1,L35=1: the VUK while Flynn's Arcade is lit. PinMAME's lamp 35 is not the SAM lamp
+  # 35, and the game says it directly: deff 105 is the Flynn's Arcade award.
+  23: [tron_deff_105]

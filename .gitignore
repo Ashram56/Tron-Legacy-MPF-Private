@@ -7,6 +7,8 @@ game/.godot/
 game/audits/
 game/data/
 captures/
+# performance runs (scripts/perf/run.sh)
+/perf/
 __pycache__/
 game/config/rom/
 game/sounds/
@@ -17,4 +19,13 @@ game/fonts/
 /game/monitor/logs/
 /game/monitor/settings.ini
 /game/monitor/settings.ini.lock
+# PuP Pack: converted media (scripts/pup/gen_pup.py) and the per-cabinet screen settings
+/pup_media/
+game/pup.local.cfg
+game/addons/native_video/
+game/addons/gde_gozen/
 .cache/
+game/fonts_ttf/*.import
+game/fonts_ttf/baked/
+# Jetson image build output (scripts/jetson_image/build/build-native.sh, run from its folder)
+/scripts/jetson_image/build/work/
