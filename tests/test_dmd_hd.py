@@ -329,7 +329,14 @@ CAN_RENDER = (sys.platform.startswith("linux") and GENERATED and os.path.exists(
 
 @unittest.skipUnless(CAN_RENDER, "needs Linux with Xvfb or a display, Godot and the imported media")
 class TestGodotModes(unittest.TestCase):
-    """Renders slides with game/tools/slide_capture.tscn, as scripts/render_diff.py does."""
+    """Renders slides with game/tools/slide_capture.tscn, as scripts/render_diff.py does. The HD here is the plain
+    one: the Serum colours (on by default when setup built them) are off (tests/test_dmd_color.py has them)."""
+
+    def setUp(self):
+        old = os.environ.get("TRON_DMD_COLOR")
+        os.environ["TRON_DMD_COLOR"] = "off"
+        self.addCleanup(lambda: os.environ.pop("TRON_DMD_COLOR") if old is None
+                        else os.environ.__setitem__("TRON_DMD_COLOR", old))
 
     def render(self, user_args=(), engine_args=(), env=None, machine_vars=None, slides=CLASSIC, reuse=False):
         out = tempfile.mkdtemp()
