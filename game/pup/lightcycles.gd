@@ -28,6 +28,7 @@ var _cells := {}             # cell -> [time laid, cycle index]
 var _cycles := []
 var _now := 0.0
 var _rng := RandomNumberGenerator.new()
+var _cycles_on := true       # false: the grid alone (pup.cfg [dmd] dmd_size="full")
 
 
 func _init() -> void:
@@ -95,6 +96,22 @@ func set_dmd_rect(rect: Rect2) -> void:
 	call_deferred("_restart")
 
 
+## With the light cycles, or the grid alone (the full size DMD covers most of the arena).
+func show_cycles(on: bool) -> void:
+	if on == _cycles_on:
+		return
+	_cycles_on = on
+	for cy in _cycles:
+		cy.alive = false
+		cy.body.visible = false
+		cy.flash.light_energy = 0.0
+		cy.boom.emitting = false
+		cy.points = []
+		cy.trail.mesh.clear_surfaces()
+	if on and _dmd.size != Vector2.ZERO:
+		call_deferred("_restart")
+
+
 func _restart() -> void:
 	var area := Rect2(Vector2.ZERO, size).grow(-12)
 	var wall := _dmd.grow_individual(-_dmd.size.x * INSET.x, -_dmd.size.y * INSET.y,
@@ -131,6 +148,8 @@ func _restart() -> void:
 					nxt.append(n)
 		edge = nxt
 		level += 1
+	if not _cycles_on:
+		return
 	for cy in _cycles:
 		cy.points = []
 		_spawn(cy)
@@ -374,7 +393,7 @@ func _derez(cy: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
-	if _dmd.size == Vector2.ZERO or not is_visible_in_tree():
+	if _dmd.size == Vector2.ZERO or not _cycles_on or not is_visible_in_tree():
 		return
 	_now += delta
 	for cy in _cycles:

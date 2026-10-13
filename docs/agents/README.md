@@ -133,7 +133,8 @@ Docker, CI on three OSes. Open:
 Built (in the fork Tron-Legacy-MPF-PuP, merged here 2026-10-10): Terry Red's "End of Line" pack on backglass,
 DMD and topper windows, OST in place of the ROM music, GoZen (Linux, Windows) and native_video (macOS) players,
 Jetson hardware decoding: [docs/pup/README.md](../pup/README.md), [docs/jetson/README.md](../jetson/README.md),
-[docs/performance.md](../performance.md). Open: after a display change, re-run `scripts/pup/pup_captures.py`
+[docs/performance.md](../performance.md). The DMD window has the DMD with the light cycles round it or full size
+(320x80 mm, no light cycles): `[dmd] dmd_size`, service menu PUP DMD SIZE (2026-10-12). Open: after a display change, re-run `scripts/pup/pup_captures.py`
 and fix the flagged rows of `game/tron_pup/trigger_map.yaml`.
 
 ## Owner preferences

@@ -151,6 +151,7 @@ func _build() -> void:
 		_stack_windows()
 	_layout_dmd()
 	windows["dmd"].size_changed.connect(_layout_dmd)
+	_follow_service_settings.call_deferred()
 	if bool(setting("pup", "ost_music", true)):
 		var music := PupScreen.new()
 		music.setup(self, MUSIC_SCREEN, {"audio_only": true, "bus": "music",
@@ -278,6 +279,8 @@ var _dmd_crop := Rect2i()
 var _cycles: LightCycles                # the light cycle chase (background="lightcycles")
 var _neon: ColorRect                    # its neon frame round the DMD
 var _dmd_view: TextureRect              # the game's DMD (the main window's picture)
+var _service_dmd_size := -1             # the service menu's PUP DMD SIZE: -1 = pup.cfg's, 0 = cycles, 1 = full
+const FRAME_PAD := 20.0                 # the neon frame's line and its glow past the DMD (772 px wide DMD)
 
 
 func _make_dmd_window() -> void:
@@ -322,22 +325,23 @@ func _make_dmd_window() -> void:
 	w.add_child(_dmd_view)
 
 
-## Frame and DMD laid out for the DMD window's current size (again on every resize).
+## Frame and DMD laid out for the DMD window's current size (again on every resize and size change).
 func _layout_dmd() -> void:
 	var area := Vector2(windows["dmd"].size)
 	var dmd_rect := Rect2(Vector2.ZERO, area)
+	var pa := pixel_aspect()
 	if _cycles:
-		# a 4:1 DMD in the middle, lightcycles_dmd of the window's width, at most lightcycles_dmd_height of its height
-		var w := minf(area.x * float(setting("dmd", "lightcycles_dmd", 0.68)),
-			area.y * float(setting("dmd", "lightcycles_dmd_height", 0.62)) * 4.0)
-		dmd_rect = Rect2((area - Vector2(w, w / 4.0)) * 0.5, Vector2(w, w / 4.0))
+		var w := cycles_dmd_width(area, pa) if not full_size_dmd() else full_dmd_width(area, pa)
+		var h := w / 4.0 * pa
+		dmd_rect = Rect2((area - Vector2(w, h)) * 0.5, Vector2(w, h))
 		_cycles.position = Vector2.ZERO
 		_cycles.size = area
+		_cycles.show_cycles(not full_size_dmd())
 		_cycles.set_dmd_rect(dmd_rect)
 		var k := w / 772.0   # the frame was drawn for a 772 px wide DMD (a 1280x390 bar panel)
 		_neon.position = Vector2.ZERO
 		_neon.size = area
-		var neon := {"size": area, "box": Vector4(dmd_rect.position.x, dmd_rect.position.y, w, w / 4.0),
+		var neon := {"size": area, "box": Vector4(dmd_rect.position.x, dmd_rect.position.y, w, h),
 			"margin": 12.0 * k, "radius": 18.0 * k, "scale": k}
 		for key in neon:
 			_neon.material.set_shader_parameter(key, neon[key])
@@ -350,11 +354,86 @@ func _layout_dmd() -> void:
 		var r = setting("dmd", "dmd_rect", [c.position.x, c.position.y, c.size.x, c.size.y])
 		dmd_rect = Rect2(origin + (Vector2(float(r[0]), float(r[1])) - Vector2(c.position)) * scale,
 			Vector2(float(r[2]), float(r[3])) * scale)
-	# the game's 128x32 DMD, 4:1, centred in its rect
-	var dmd_size := Vector2(128, 32)
+	# the game's 128x32 DMD, 4:1 on the glass (pa: the monitor's pixels may not be square), centred in its rect
+	var dmd_size := Vector2(128, 32 * pa)
 	var k := minf(dmd_rect.size.x / dmd_size.x, dmd_rect.size.y / dmd_size.y)
 	_dmd_view.size = dmd_size * k
 	_dmd_view.position = dmd_rect.position + (dmd_rect.size - _dmd_view.size) * 0.5
+
+
+## The DMD window's size ([dmd] dmd_size in pup.cfg, the service menu's ADJUSTMENTS > DISPLAY ADJUSTMENTS >
+## PUP DMD SIZE over it): false = "cycles", a smaller DMD with the light cycles round it; true = "full", the DMD
+## full size over the grid alone.
+func full_size_dmd() -> bool:
+	if _service_dmd_size >= 0:
+		return _service_dmd_size == 1
+	return str(setting("dmd", "dmd_size", "cycles")) == "full"
+
+
+## A pixel's width over its height on the DMD window's monitor: [dmd] screen_mm (the monitor's picture, in mm)
+## over its resolution. 1 (square pixels) without screen_mm. A 1280x390 bar of 360x109 mm: 0.28125 mm over
+## 0.27949 mm = 1.0063, so a DMD 4:1 on the glass is 0.6% taller than 4:1 in pixels.
+func pixel_aspect() -> float:
+	var mm := screen_mm()
+	var px := Vector2(DisplayServer.screen_get_size(_dmd_screen()))
+	if mm == Vector2.ZERO or px.x <= 0.0 or px.y <= 0.0:
+		return 1.0
+	return (mm.x / px.x) / (mm.y / px.y)
+
+
+## [dmd] screen_mm as a Vector2, ZERO when not given.
+func screen_mm() -> Vector2:
+	var mm = setting("dmd", "screen_mm", [0, 0])
+	var v := Vector2(float(mm[0]), float(mm[1])) if mm is Array and mm.size() == 2 else Vector2.ZERO
+	return v if v.x > 0.0 and v.y > 0.0 else Vector2.ZERO
+
+
+func _dmd_screen() -> int:
+	return windows["dmd"].current_screen if windows.has("dmd") else int(setting("dmd", "screen", 0))
+
+
+## "cycles": lightcycles_dmd of the window's width, at most lightcycles_dmd_height of its height.
+func cycles_dmd_width(area: Vector2, pa: float) -> float:
+	return minf(area.x * float(setting("dmd", "lightcycles_dmd", 0.68)),
+		area.y * float(setting("dmd", "lightcycles_dmd_height", 0.62)) * 4.0 / pa)
+
+
+## "full": as large as the window takes with the neon frame round it (FRAME_PAD of a 772 px wide DMD on each
+## side), and no wider than [dmd] full_dmd_mm (the width of a real DMD, 320 mm) when screen_mm is given.
+## docs/pup/README.md, "DMD size", has the 1280x390 bar's numbers.
+func full_dmd_width(area: Vector2, pa: float) -> float:
+	var pad := 2.0 * FRAME_PAD / 772.0
+	var w := minf(area.x / (1.0 + pad), area.y / (pa / 4.0 + pad))
+	var cap := float(setting("dmd", "full_dmd_mm", 320))
+	var mm := screen_mm()
+	var px := Vector2(DisplayServer.screen_get_size(_dmd_screen()))
+	if cap > 0.0 and mm != Vector2.ZERO and px.x > 0.0:
+		w = minf(w, cap / (mm.x / px.x))
+	return w
+
+
+## The service menu's PUP DMD SIZE (MPF machine variable pup_dmd_size, tron/settings.py DisplaySettings,
+## sent by GMC's machine variable monitor): -1 = pup.cfg's dmd_size, 0 = with the light cycles, 1 = full size.
+func _follow_service_settings() -> void:
+	var mpf = get_tree().root.get_node_or_null("MPF")
+	if mpf == null or mpf.game == null:
+		return
+	mpf.game.machine_update.connect(service_setting)
+	if mpf.game.machine_vars.has("pup_dmd_size"):
+		service_setting("pup_dmd_size", mpf.game.machine_vars["pup_dmd_size"])
+
+
+func service_setting(var_name: String, value) -> void:
+	if var_name != "pup_dmd_size" or not str(value).is_valid_int():
+		return
+	var v := clampi(str(value).to_int(), -1, 1)
+	if v == _service_dmd_size:
+		return
+	var was := full_size_dmd()
+	_service_dmd_size = v
+	if full_size_dmd() != was and windows.has("dmd"):
+		print("PuP: DMD %s (service menu)" % ("full size" if full_size_dmd() else "with the light cycles"))
+		_layout_dmd()
 
 
 func _forward_input(event: InputEvent) -> void:

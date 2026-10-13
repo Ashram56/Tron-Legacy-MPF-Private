@@ -166,6 +166,37 @@ function Test-RepoAccess([string]$GitExe, [string]$Url, [switch]$Anonymous) {
     } finally { Remove-Item Env:GIT_TERMINAL_PROMPT, Env:GCM_INTERACTIVE -ErrorAction SilentlyContinue }
 }
 
+function Clear-UntrackedInUpdate([string]$GitExe) {
+    # Before a pull: files the update adds that are already here, untracked, would stop 'git pull' ("untracked
+    # working tree files would be overwritten"). Godot writes a .uid next to every script it opens, so a new
+    # script's .uid is often on disk before the commit that adds it. Remove those, and any copy identical to the
+    # update's; move anything else aside as <file>.local so nothing of the player's is lost.
+    $ErrorActionPreference = 'Continue'     # stderr is not an error here (see Test-RepoAccess)
+    $up = (& $GitExe -C $Root rev-parse -q --verify '@{u}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $up) { return }
+    $added = @(& $GitExe -C $Root -c core.quotepath=off diff --name-only --no-renames --diff-filter=A HEAD $up --)
+    foreach ($f in $added) {
+        if (-not $f) { continue }
+        $path = Join-Path $Root $f
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        & $GitExe -C $Root ls-files --error-unmatch -- $f *> $null
+        if ($LASTEXITCODE -eq 0) { continue }
+        $generated = $f -match '\.(uid|import)$'
+        $same = $false
+        if (-not $generated -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+            $same = ((& $GitExe -C $Root hash-object -- $f) -eq (& $GitExe -C $Root rev-parse "${up}:$f"))
+        }
+        if ($generated -or $same) {
+            Write-Host "    `$ Remove-Item $path"
+            if (-not $DryRun) { Remove-Item -LiteralPath $path -Force }
+        } else {
+            Write-Note "kept your copy of $f as $f.local (the update adds its own)"
+            Write-Host "    `$ Move-Item $path $path.local"
+            if (-not $DryRun) { Move-Item -LiteralPath $path -Destination "$path.local" -Force }
+        }
+    }
+}
+
 function Invoke-GitHubAuth([string]$GitExe) {
     Write-Step 'GitHub access'
     $token = @($env:TRON_GITHUB_TOKEN, $env:GITHUB_TOKEN, $env:GH_TOKEN) | Where-Object { $_ } | Select-Object -First 1
@@ -382,7 +413,11 @@ try {
                 $onRemote = ($LASTEXITCODE -eq 0)
                 $ErrorActionPreference = 'Stop'
             }
-            if ($onRemote) { Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only') }
+            if ($onRemote) {
+                Invoke-Step $gitExe @('-C', $Root, 'fetch', 'origin')
+                Clear-UntrackedInUpdate $gitExe
+                Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only')
+            }
             else {
                 Write-Note "branch '$(if ($cur) { $cur } else { 'none' })' is no longer on GitHub: switching to $RepoBranch"
                 Invoke-Step $gitExe @('-C', $Root, 'fetch', '--prune', 'origin')

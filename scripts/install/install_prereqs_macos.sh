@@ -249,6 +249,28 @@ fi
 
 # ------------------------------------------------------------------ repository (run on its own: clone it)
 
+# Before a pull: files the update adds that are already here, untracked, would stop `git pull` ("untracked
+# working tree files would be overwritten"). Godot writes a .uid next to every script it opens, so a new
+# script's .uid is often on disk before the commit that adds it. Remove those, and any copy identical to the
+# update's; move anything else aside as <file>.local so nothing of the player's is lost.
+clear_untracked_in_update() {
+    local up f
+    up="$(git -C "$ROOT" rev-parse -q --verify '@{u}' 2>/dev/null)" || return 0
+    while IFS= read -r -d '' f; do
+        [ -e "$ROOT/$f" ] || [ -L "$ROOT/$f" ] || continue
+        git -C "$ROOT" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && continue
+        case "$f" in
+            *.uid|*.import) run rm -f -- "$ROOT/$f" ;;
+            *)  if [ -f "$ROOT/$f" ] && [ "$(git -C "$ROOT" hash-object -- "$f")" = "$(git -C "$ROOT" rev-parse "$up:$f")" ]; then
+                    run rm -f -- "$ROOT/$f"
+                else
+                    note "kept your copy of $f as $f.local (the update adds its own)"
+                    run mv -- "$ROOT/$f" "$ROOT/$f.local"
+                fi ;;
+        esac
+    done < <(git -C "$ROOT" diff -z --name-only --no-renames --diff-filter=A HEAD "$up" --)
+}
+
 if [ "$CLONE" = 1 ]; then
     say "Repository: $REPO_URL ($REPO_BRANCH) in $ROOT"
     if [ -d "$ROOT/.git" ]; then
@@ -256,6 +278,8 @@ if [ "$CLONE" = 1 ]; then
         # (a deleted pull-request branch) or none is checked out
         CUR="$(git -C "$ROOT" symbolic-ref --short -q HEAD 2>/dev/null || true)"
         if [ -n "$CUR" ] && git -C "$ROOT" ls-remote --exit-code --heads origin "$CUR" >/dev/null 2>&1; then
+            run git -C "$ROOT" fetch origin
+            clear_untracked_in_update
             run git -C "$ROOT" pull --ff-only
         else
             note "branch '${CUR:-none}' is no longer on GitHub: switching to $REPO_BRANCH"

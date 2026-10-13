@@ -433,6 +433,39 @@ class TestAuditsAndAdjustments(ServiceCase):
         self.svc.factory_reset()
         self.assertEqual((80, -1), (os_.display_settings[1], var("dmd_text_glow")))
 
+    def test_pup_dmd_size(self):
+        """DISPLAY ADJUSTMENTS > PUP DMD SIZE: the PuP DMD window's DMD with the light cycles (factory: pup.cfg's
+        dmd_size="cycles") or full size; machine var pup_dmd_size, which pup/pup_player.gd follows (-1 =
+        pup.cfg's value)."""
+        os_ = self.tron
+        var = self.machine.variables.get_machine_var
+        self.assertEqual(-1, var("pup_dmd_size"))
+        self.enter()
+        self.goto("GO TO ADJUSTMENTS MENU", "DISPLAY ADJUSTMENTS")
+        self.press("plus")
+        self.press("plus")
+        self.assertEqual(("DISPLAY ADJUSTMENTS", "03 PUP DMD SIZE", "WITH LIGHT CYCLES (FACTORY)"), self.shown[-1])
+        self.press("select")
+        self.press("plus")
+        self.assertEqual("> FULL SIZE", self.shown[-1][2])
+        self.assertEqual(1, var("pup_dmd_size"))                 # shown at once
+        self.press("plus")                                        # two values only
+        self.assertEqual("> FULL SIZE", self.shown[-1][2])
+        self.press("select")
+        self.assertEqual((1, 1, 1), (os_.display_settings[3], var("pup_dmd_size"), var("pup_dmd_size_setting")))
+        self.assertTrue(self.machine.variables.machine_vars["pup_dmd_size_setting"]["persist"])
+        self.svc.factory_reset()
+        self.assertEqual((0, -1), (os_.display_settings[3], var("pup_dmd_size")))
+
+    def test_pup_dmd_size_factory_from_pup_cfg(self):
+        """PUP DMD SIZE's factory value is pup.cfg's [dmd] dmd_size (pup.local.cfg over it)."""
+        from tron import settings
+        from tron_pup import settings as pup_settings
+        with mock.patch.object(pup_settings, "load", return_value={"dmd": {"dmd_size": "full"}}):
+            self.assertEqual(1, settings.pup_dmd_size_default())
+        with mock.patch.object(pup_settings, "load", return_value={"pup": {}}):
+            self.assertEqual(0, settings.pup_dmd_size_default())
+
     def test_installs_and_factory_reset(self):
         os_ = self.tron
         self.enter()

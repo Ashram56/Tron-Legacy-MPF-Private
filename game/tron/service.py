@@ -39,7 +39,7 @@ CUSTOM_MESSAGE_LEN = 16
 CUSTOM_PRICING_MAX = 10
 LOCK_KEY = "service"
 # items of this game that the ROM does not have, by menu (docs/rom_differences.md): DISPLAY ADJUSTMENTS,
-# the HD display's text glow and size (tron/settings.py DisplaySettings)
+# the HD display's text glow and size and the PuP DMD window's size (tron/settings.py DisplaySettings)
 GAME_ITEMS = {"ADJUSTMENTS": [{"text": "DISPLAY ADJUSTMENTS", "kind": "screen", "submenu": None,
                                "shown_only_if": None}]}
 LIGHT_PRIORITY = 1000000

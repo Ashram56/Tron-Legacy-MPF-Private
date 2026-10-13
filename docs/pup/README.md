@@ -112,12 +112,40 @@ borderless=true
   its height it may take (0.68 and 0.62, the DMD's share of the pack's own panel art: 870x218 on a 1280x390
   bar, 1190x298 on 1920x480; until 2026-10-10 0.6 and 0.5, which left a 1920x480 bar's DMD at half its
   height). It is
-  a few hundred triangles; `background="frame"` is the PuP Pack's DMD panel art instead.
+  a few hundred triangles; now and then a glowing segment with a fading tail runs along a grid line
+  picked at random, along x or z, like the pulses round the DMD's frame (`game/pup/lightcycles_grid.gdshader`:
+  `pulse_chance`, `pulse_speed`, `pulse_length`, `pulse_energy`; all in the shader,
+  no work on the CPU), with the light cycles or without. `background="frame"` is the PuP Pack's DMD panel art
+  instead.
+- `[dmd] dmd_size` (`background="lightcycles"`): `cycles` (the default) is the DMD above with the light cycles
+  round it; `full` is the DMD full size over the grid, without the light cycles. The service menu chooses too,
+  over pup.cfg: ADJUSTMENTS > DISPLAY ADJUSTMENTS > PUP DMD SIZE, `WITH LIGHT CYCLES` or `FULL SIZE` (stored,
+  shown at once). `screen_mm` is the DMD monitor's picture in mm and `full_dmd_mm` the full DMD's width
+  (see "DMD size" below).
 - `[dmd] frame_crop` / `dmd_rect` (`background="frame"`) place the art and the DMD (pixels of the art image),
   `dots` draws round dots.
   The game's own 128x32 window is minimised (`hide_main_window`); it stays the source of the DMD picture, so
   `render_check.py` and the P-ROC DMD output work as before. Keys pressed in any PuP window drive the game as
   in the DMD window.
+
+### DMD size
+
+A real Stern DMD is 128x32 dots on a 320x80 mm glass (2.5 mm a dot). The `full` size keeps that size when the
+DMD monitor's size in mm is known, else it takes the window less the neon frame. On a 1280x390 bar panel of
+360x109 mm (`screen_mm=[360, 109]` in `game/pup.local.cfg`):
+
+| | Value |
+|---|---|
+| A pixel | 360 / 1280 = 0.28125 mm wide, 109 / 390 = 0.27949 mm tall: pixel aspect 1.0063 (almost square) |
+| 4:1 on the glass | height in pixels = width / 4 x 1.0063 (a 4:1 rectangle in pixels would be 0.6% too flat) |
+| `cycles` (0.68 of the width) | 870x219 px = 245x61 mm, 1.9 mm a dot: 59% of a real DMD's area |
+| `full`, `full_dmd_mm=320` | 320 / 0.28125 = 1138 px wide, 1138 / 4 x 1.0063 = 286 px tall: 1138x286 px = 320x80 mm, a real DMD's size; 71 px of grid left and right, 52 above and below |
+| `full`, `full_dmd_mm=0` (no limit) | the window less the neon frame (20 px of a 772 px wide DMD on each side): 1280 / 1.052 = 1217 px, 1217x306 px = 342x86 mm |
+| `full` without `screen_mm` | square pixels and no mm limit: 1217x304 px |
+
+The light cycles need room round the DMD (a 48x24 cell arena, the DMD's middle a wall), which is why `cycles`
+keeps the DMD smaller; at full size only the grid stays round it. Other monitors: put their visible width and
+height in mm in `screen_mm` (from the panel's data sheet, or measured).
 
 **Linux cabinet (Jetson).** Use an X11 session (on Ubuntu's login screen, the gear icon: "Ubuntu on Xorg"):
 Godot places one window per monitor only on X11. Nobody touches a keyboard or mouse while playing, so the

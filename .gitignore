@@ -25,7 +25,9 @@ game/pup.local.cfg
 game/addons/native_video/
 game/addons/gde_gozen/
 .cache/
-game/fonts_ttf/*.import
+# Godot: the .uid next to each script and shader is committed (other files refer to it); .import files are
+# rebuilt from the defaults on import, so none is committed
+game/**/*.import
 game/fonts_ttf/baked/
 # Jetson image build output (scripts/jetson_image/build/build-native.sh, run from its folder)
 /scripts/jetson_image/build/work/

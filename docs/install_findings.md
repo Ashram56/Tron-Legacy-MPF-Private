@@ -18,7 +18,10 @@ Environment variables read before the line:
 
 - `TRON_DIR`: install folder (default `~/Tron-Legacy-MPF`, `%USERPROFILE%\Tron-Legacy-MPF`; keep it out of OneDrive).
 - `TRON_BRANCH`, `TRON_REPO`: branch and repository to clone. A folder that already holds a clone is updated
-  with `git pull --ff-only`, so the line is safe to run again.
+  with `git pull --ff-only`, so the line is safe to run again. Before the pull it clears the untracked files
+  the update adds (git would refuse to overwrite them): Godot's `.uid`/`.import` files and identical copies are
+  removed, any other file is moved to `<file>.local`. Found 2026-10-10: Godot had written
+  `game/tools/bake_fonts.gd.uid` on a player's PC before the commit that tracks it, and the pull aborted.
 - `TRON_GITHUB_TOKEN`: token for private repositories, so the installer does not prompt.
 
 Put the token in front of the line rather than typing it at the prompt:

@@ -124,6 +124,8 @@ class TestDmdBackground(unittest.TestCase):
         cfg.read(os.path.join(GAME, "pup.cfg"))
         self.assertEqual('"lightcycles"', cfg["dmd"]["background"])
         self.assertIn("frame_image", cfg["dmd"])   # background="frame" keeps the pack's art
+        self.assertEqual('"cycles"', cfg["dmd"]["dmd_size"])   # the light cycles, "full" = full size DMD
+        self.assertEqual("[0, 0]", cfg["dmd"]["screen_mm"])   # square pixels unless the cabinet says
         for name in ("lightcycles.gd", "lightcycles_grid.gdshader", "neon_frame.gdshader"):
             self.assertTrue(os.path.exists(os.path.join(GAME, "pup", name)), name)
 

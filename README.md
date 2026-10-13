@@ -45,7 +45,8 @@ You can change where the files go, and what is installed:
   macOS / Linux: `TRON_DIR=~/games/tron bash <(curl ...)`. The default is `%USERPROFILE%\Tron-Legacy-MPF-Private` on
   Windows, `~/Tron-Legacy-MPF-Private` elsewhere.
 - **Branch / repository:** `TRON_BRANCH` and `TRON_REPO`, the same way. A folder that already holds a clone is
-  updated with `git pull --ff-only` instead.
+  updated with `git pull --ff-only` instead, after moving aside the untracked files the update adds (see
+  "Update").
 - **Private repositories:** git reads a private repository (the assets or the game if they are made private)
   with a GitHub token, never a password. The installer asks for it first, before the long installs (github.com > Settings > Developer settings > Personal access tokens; a fine-grained token with
   Contents: read-only). On Windows, paste it with a right-click: Ctrl+V does not paste into the hidden prompt. Or
@@ -172,6 +173,9 @@ borderless=true
 
 From the install folder: `git pull`, then `python3 scripts/setup.py` (Windows: `py -3.11 scripts\setup.py`).
 You can also run the install line again. Both are safe to repeat; setup only redoes what changed.
+If `git pull` stops on "untracked working tree files would be overwritten" (Godot writes a `.uid` file next to
+each new script, and the update brings the same file), run the install line instead: it removes those Godot
+files, and moves any other file of yours in the way to `<file>.local`, before pulling.
 
 Git leaves a folder behind when a pull moves or deletes all its files. `python3 scripts/clean_tree.py` lists those
 empty folders and `--delete` removes them; it never touches a folder holding a file, a Git-ignored folder or a

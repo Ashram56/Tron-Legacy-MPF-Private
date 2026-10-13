@@ -271,6 +271,45 @@ class TestShellScripts(unittest.TestCase):
                 self.assertIn("'feature' is no longer on GitHub", r.stdout)
                 self.assertIn("git -C {} checkout -B main --track origin/main".format(target), r.stdout)
 
+    def test_existing_clone_untracked_files_in_update(self):
+        """Files the update adds that sit untracked in the clone (a .uid Godot wrote for a new script) would stop
+        `git pull`: Godot's .uid/.import files and identical copies are removed, anything else is kept as .local."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        origin, target = os.path.join(tmp, "origin"), os.path.join(tmp, "tron")
+
+        def git(*a, cwd=tmp):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"]
+                           + list(a), cwd=cwd, check=True, capture_output=True)
+
+        def write(folder, files):
+            for rel, text in files.items():
+                os.makedirs(os.path.dirname(os.path.join(folder, rel)), exist_ok=True)
+                with open(os.path.join(folder, rel), "w") as f:
+                    f.write(text)
+        git("init", origin)
+        git("commit", "--allow-empty", "-m", "one", cwd=origin)
+        git("clone", origin, target)
+        write(origin, {"game/tools/new.gd.uid": "uid://tracked\n", "same.txt": "same\n", "mine.txt": "theirs\n"})
+        git("add", ".", cwd=origin)
+        git("commit", "-m", "two", cwd=origin)
+        git("fetch", cwd=target)
+        write(target, {"game/tools/new.gd.uid": "uid://local\n", "same.txt": "same\n", "mine.txt": "mine\n",
+                       "other.txt": "untouched\n"})
+        for name in ("install_prereqs_linux.sh", "install_prereqs_macos.sh"):
+            with self.subTest(script=name):
+                env = {"TRON_OS_RELEASE": self.os_release("ID=debian\n"), "DISPLAY": ":0", "TRON_DIR": target,
+                       "TRON_REPO": origin}
+                alone = os.path.join(tmp, name)
+                shutil.copy(os.path.join(INSTALL, name), alone)
+                r = sh([alone, "--dry-run"], env=env)
+                self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+                self.assertIn("rm -f -- " + os.path.join(target, "game/tools/new.gd.uid"), r.stdout)
+                self.assertIn("rm -f -- " + os.path.join(target, "same.txt"), r.stdout)
+                self.assertIn("kept your copy of mine.txt as mine.txt.local", r.stdout)
+                self.assertNotIn("other.txt", r.stdout)
+                self.assertLess(r.stdout.index("mine.txt.local"), r.stdout.index("pull --ff-only"))
+
     def test_github_auth(self):
         """The token step (run first, so a private repository asks for a token before the long installs): public
         repositories need none, even with a token given; a token that cannot read a private repository stops the install with a clear message, and

@@ -244,27 +244,42 @@ class Audits:
 
 # ---------------------------------------------------------------------------------------------- HD display
 
-# The HD DMD's text glow and size (not in the ROM: docs/rom_differences.md), as percentages:
-# {item: (name, stored machine var, live machine var, factory, min, max, step)}. The factory values are
-# tools/dmd_mode.gd's defaults (glow 0.8, text scale 0.85).
+# The HD DMD's text glow and size (not in the ROM: docs/rom_differences.md), as percentages, and the PuP
+# DMD window's layout: {item: (name, stored machine var, live machine var, factory, min, max, step)}. The
+# factory values are tools/dmd_mode.gd's defaults (glow 0.8, text scale 0.85) and game/pup.cfg's
+# [dmd] dmd_size ("cycles").
 DISPLAY_ITEMS = {
     1: ("TEXT GLOW", "dmd_text_glow_setting", "dmd_text_glow", 80, 0, 300, 10),
     2: ("TEXT SIZE", "dmd_text_size_setting", "dmd_text_size", 85, 50, 110, 5),
+    3: ("PUP DMD SIZE", "pup_dmd_size_setting", "pup_dmd_size", 0, 0, 1, 1),
 }
+# items whose values are names, not percentages: item -> names by value. PUP DMD SIZE: the PuP DMD window
+# (game/pup/pup_player.gd) with a smaller DMD among the light cycles, or the DMD full size over the grid alone
+PUP_DMD_SIZES = ("WITH LIGHT CYCLES", "FULL SIZE")
+DISPLAY_NAMES = {3: PUP_DMD_SIZES}
+
+
+def pup_dmd_size_default():
+    """PUP DMD SIZE's factory value: game/pup.cfg's (+ pup.local.cfg's) [dmd] dmd_size, "cycles" (0) or
+    "full" (1)."""
+    from tron_pup import settings as pup_settings
+    return int(str(pup_settings.load().get("dmd", {}).get("dmd_size", "cycles")) == "full")
 
 
 class DisplaySettings:
-    """DISPLAY ADJUSTMENTS (ADJUSTMENTS menu, added by this game): the HD DMD's text glow and text size, with
-    the interface of Adjustments (the adjustment editor uses either). The operator's value persists in
+    """DISPLAY ADJUSTMENTS (ADJUSTMENTS menu, added by this game): the HD DMD's text glow and text size and
+    the PuP DMD window's size (with the light cycles, or full size), with the interface of Adjustments (the adjustment editor uses either). The operator's value persists in
     the stored machine var; the live machine var (not persisted, -1 = the value the display was started
-    with: --dmd-text-glow / --dmd-text-scale or their defaults) is what the display (tools/dmd_mode.gd)
-    follows, through GMC's machine variable monitor; preview() shows a value being edited there. A value
+    with: --dmd-text-glow / --dmd-text-scale, pup.cfg's dmd_size, or their defaults) is what the display
+    (tools/dmd_mode.gd, pup/pup_player.gd) follows, through GMC's machine variable monitor; preview() shows a value being edited there. A value
     stored at its factory default leaves the display's own start value in place."""
 
     def __init__(self, machine):
         self.machine = machine
         self.info = {num: {"name": spec[0], "min": spec[4], "max": spec[5], "step": spec[6]}
                      for num, spec in DISPLAY_ITEMS.items()}
+        self.factory = {num: spec[3] for num, spec in DISPLAY_ITEMS.items()}
+        self.factory[3] = pup_dmd_size_default()
         for num in DISPLAY_ITEMS:
             self._show(num, self.stored(num))
 
@@ -277,7 +292,7 @@ class DisplaySettings:
         self.machine.variables.set_machine_var(DISPLAY_ITEMS[num][2], -1 if value is None else int(value))
 
     def default(self, num):
-        return DISPLAY_ITEMS[num][3]
+        return self.factory[num]
 
     def __getitem__(self, num):
         value = self.stored(num)
@@ -303,6 +318,8 @@ class DisplaySettings:
 
     def label(self, num, value=None):
         value = self[num] if value is None else value
+        if num in DISPLAY_NAMES:
+            return DISPLAY_NAMES[num][value]
         return "OFF" if num == 1 and value == 0 else "{}%".format(value)
 
     def step(self, num, value, direction):
