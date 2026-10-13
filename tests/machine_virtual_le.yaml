@@ -1,0 +1,6 @@
+#config_version=6
+
+# What "mpf game . -c config,hw_virtual_le" loads, as one file for the unit tests: tests/test_hw_virtual.py.
+config:
+  - ../game/config/config.yaml
+  - ../game/config/hw_virtual_le.yaml

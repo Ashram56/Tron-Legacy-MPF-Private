@@ -3,13 +3,15 @@
 
     python scripts/setup.py                 # everything, MPF Monitor included; safe to re-run (steps in place are skipped)
     python scripts/setup.py --no-monitor    # without MPF Monitor (mpf-monitor, Qt)
+    python scripts/setup.py --vpx           # also the Visual Pinball X bridge's packages (docs/vpx.md)
     python scripts/setup.py --dry-run       # print the plan (URLs, paths) and change nothing
     python scripts/setup.py --dry-run --os windows --arch x86_64   # the plan for another host
 
 Steps: the assets submodule; .venv/ with the pinned MPF, pillow and pytest; Godot (official build for the
 host) in tools/godot/; the GMC add-on in game/addons/mpf-gmc/; the generated MPF config and media
 (scripts/gen_config.py, scripts/gen_media.py, which also builds the HD DMD fonts and frames with
-scripts/dmd_hd.py); the Godot import (game/.godot/). Versions and paths live in scripts/toolchain.py.
+scripts/dmd_hd.py); the Godot import (game/.godot/).
+Versions and paths live in scripts/toolchain.py.
 """
 import argparse
 import io
@@ -26,6 +28,7 @@ import zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fsutil  # noqa: E402  (Windows/OneDrive-safe folder wipes)
 import gmc_patch  # noqa: E402
+from pup import pup_setup  # noqa: E402  (PuP Pack: docs/pup/README.md)
 import toolchain as tc  # noqa: E402
 
 
@@ -69,11 +72,16 @@ class Setup:
         reqs = list(tc.REQUIREMENTS)
         if self.args.monitor:
             reqs += tc.MONITOR_REQUIREMENTS
+        if getattr(self.args, "vpx", False):
+            reqs += tc.VPX_REQUIREMENTS
         if not os.path.exists(py) or self.dry:
-            self.run([sys.executable, "-m", "venv", tc.venv_dir()])
+            # a .venv whose Python is gone (the interpreter it was made from was removed or replaced) is remade
+            clear = ["--clear"] if not os.path.exists(py) and os.path.isdir(tc.venv_dir()) else []
+            self.run([sys.executable, "-m", "venv"] + clear + [tc.venv_dir()])
         missing = self.dry or (not os.path.exists(mpf) or self.args.upgrade
                                or (self.args.monitor and not self.has_module(py, "mpfmonitor"))
-                               or not self.has_module(py, "fontTools"))
+                               or not self.has_module(py, "fontTools")
+                               or (getattr(self.args, "vpx", False) and not self.has_module(py, "olefile")))
         if missing:
             self.run([py, "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
             self.run([py, "-m", "pip", "install", "--quiet"] + reqs)
@@ -154,6 +162,13 @@ class Setup:
             self.say("   $ " + " ".join(cmd))
             if not self.dry:
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
+        # the HD clean fonts' signed distance fields, made once here instead of on the game's main thread
+        # (tron/rom_text_hd.gd; about 2 minutes on a Jetson Xavier NX)
+        self.say("== HD clean fonts (game/tools/bake_fonts.gd)")
+        cmd = [exe, "--headless", "--path", tc.GAME, "-s", "res://tools/bake_fonts.gd"]
+        self.say("   $ " + " ".join(cmd))
+        if not self.dry:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1800)
 
 
 def refresh_media():
@@ -244,6 +259,8 @@ def main(argv=None):
                    help="install MPF Monitor {} (the default)".format(tc.MPF_MONITOR_VERSION))
     p.add_argument("--no-monitor", dest="monitor", action="store_false", help="leave MPF Monitor out")
     p.set_defaults(monitor=True)
+    p.add_argument("--vpx", action="store_true",
+                   help="also install the Visual Pinball X bridge's packages (olefile; pywin32 on Windows)")
     p.add_argument("--upgrade", action="store_true", help="re-run pip install even if MPF is there")
     p.add_argument("--skip-godot", action="store_true", help="no Godot, GMC or Godot import (MPF and tests only)")
     p.add_argument("--skip-media", action="store_true", help="no generated media (config only)")
@@ -260,11 +277,15 @@ def main(argv=None):
         s.run([tc.venv_python(s.os), os.path.join(tc.ROOT, "scripts", "gen_config.py")], cwd=tc.ROOT)
     else:
         s.generate()
+        pup_setup.setup(tc.venv_python(s.os), s.dry)  # PuP Pack: docs/pup/README.md
     if not args.skip_godot:
         s.godot_import()
         if not args.skip_media and not s.dry:
             tc.write_media_stamp()          # scripts/run.py regenerates when this no longer matches
     s.say("Done. Run `python scripts/run.py` (Godot + MPF), or `python scripts/render_check.py` without a screen.")
+    if args.vpx:
+        s.say("Visual Pinball X (docs/vpx.md): register the bridge once, as Administrator: "
+              "`python scripts/vpx_bridge.py --register`, then `python scripts/vpx_table.py <table.vpx>`.")
     return 0
 
 

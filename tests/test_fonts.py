@@ -66,6 +66,13 @@ class TestFontDecoding(unittest.TestCase):
         self.assertEqual(len(dots), max(sum(r[y][x] == v for (x, y), v in dots.items()) for r in ref))
 
 
+def effect_scene(name):
+    """An effect's node scene: media/dmd/<name>/nodes.tscn (the slide in slides/deffs/ is a proxy that draws the
+    effect from its effect.json), or the slide itself before the data renderer."""
+    nodes = os.path.join(ROOT, "game", "media", "dmd", name, "nodes.tscn")
+    return nodes if os.path.exists(nodes) else os.path.join(ROOT, "game", "slides", "deffs", name + ".tscn")
+
+
 class TestLayout(unittest.TestCase):
 
     def test_draw_calls(self):
@@ -184,7 +191,7 @@ class TestLayout(unittest.TestCase):
         deffs = json.load(open(path, encoding="utf-8"))["deffs"]
         self.assertEqual(("letters", ["lit", "new"]), (deffs["91"]["source"], deffs["91"]["args"]))
         self.assertEqual(["old", "new"], deffs["107"]["args"])
-        slide = os.path.join(ROOT, "game", "slides", "deffs", "deff_091.tscn")
+        slide = effect_scene("deff_091")
         if os.path.exists(slide):
             with open(slide, encoding="utf-8") as f:
                 body = f.read()
@@ -192,7 +199,7 @@ class TestLayout(unittest.TestCase):
                 self.assertIn('[node name="%s"' % node, body)
             self.assertIn("res://tron/letter_panel.gd", body)
             self.assertNotIn("reference_capture", body)
-        slide = os.path.join(ROOT, "game", "slides", "deffs", "deff_095.tscn")
+        slide = effect_scene("deff_095")
         if os.path.exists(slide):
             with open(slide, encoding="utf-8") as f:
                 body = f.read()
@@ -210,13 +217,13 @@ class TestLayout(unittest.TestCase):
         self.assertGreater(len(dynamic), 70)
         for d, info in dynamic.items():
             self.assertTrue(any(f is not None for f in info["fonts"]), d)
-            slide = os.path.join(ROOT, "game", "slides", "deffs", info["slide"] + ".tscn")
+            slide = effect_scene(info["slide"])
             if os.path.exists(slide):
                 with open(slide, encoding="utf-8") as f:
                     body = f.read()
                 self.assertIn("res://tron/rom_text.gd", body, d)
                 self.assertNotIn("font_sizes/font_size", body, d)
-        with open(os.path.join(ROOT, "game", "slides", "deffs", "deff_019.tscn"), encoding="utf-8") as f:
+        with open(effect_scene("deff_019"), encoding="utf-8") as f:
             body = f.read()
         for node in ("Credits", "Replay", "P1", "P4", "Award", "Separator", "BarGem", "ScoreDisplay"):
             self.assertIn('[node name="%s"' % node, body)

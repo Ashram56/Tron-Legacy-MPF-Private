@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Two fixes to GMC 1.0.0 in game/addons/mpf-gmc (downloaded, not in git), applied idempotently.
+"""Three changes to GMC 1.0.0 in game/addons/mpf-gmc (downloaded, not in git), applied idempotently.
 
 1. GMC's poll thread parses whatever bytes the socket holds as whole lines. MPF's "settings" message at connect
 is large (every adjustment with its value labels), so a read can end inside it: GMC then parses half a
@@ -9,7 +9,9 @@ The patch keeps the unfinished end of a read and prepends it to the next one.
 2. GMC looks keys up in gmc.cfg [keyboard] by their layout label only, so on AZERTY the number row (which
 needs Shift for digits) and "/" never match. A key not found by label is now also looked up by its physical
 position on a US keyboard.
-Upstream (mpf-gmc main, 2026-10) has the same code. setup.py, run.py and the Docker entrypoint call patch(); it does nothing once applied.
+Upstream (mpf-gmc main, 2026-10) has the same code for 1 and 2.
+3. GMC builds every slide from its scene at each show and frees it at its removal. The display effects' slides
+(game/tron/dmd_slide.gd) are kept when removed; media.gd get_slide_instance() takes a kept one back first. setup.py, run.py and the Docker entrypoint call patch(); it does nothing once applied.
 
     python scripts/gmc_patch.py        # patch now; prints what it did
 """
@@ -49,6 +51,15 @@ EDITS = [
      "\t\tif physical in keyboard:\n"
      "\t\t\tkeycode = physical\n"
      "\tif keycode in keyboard:\n"),
+    ("scripts/media.gd",                   # display effects' slides reused (game/tron/dmd_slide.gd)
+     "\tassert(slide_name in slides, \"Unknown slide name '%s'\" % slide_name)\n",
+     "\tassert(slide_name in slides, \"Unknown slide name '%s'\" % slide_name)\n"
+     "\t" + MARK.replace("partial BCP lines", "slide pool") + ": a slide kept from an earlier show\n"
+     "\t# (res://tron/dmd_slide.gd) is shown again instead of building a new one from its scene\n"
+     "\tif not preload_only:\n"
+     "\t\tvar kept = load(\"res://tron/dmd_slide.gd\").take(slide_name)\n"
+     "\t\tif kept:\n"
+     "\t\t\treturn kept\n"),
     ("scripts/bcp_parse.gd",               # a bad message is logged instead of stopping the BCP thread
      "\t\t\tresult.error = \"Error %s parsing trigger: %s\" % [json.error, message]\n",
      "\t\t\tresult.error = \"Error parsing trigger: %s\" % message   " + MARK + "\n"),

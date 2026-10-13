@@ -11,6 +11,7 @@ or PowerShell 7. Run it from the repository:
     powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1
     powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1 -NoMonitor
     powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1 -DryRun
+    powershell -ExecutionPolicy Bypass -File scripts\install\install_prereqs_windows.ps1 -PupZip PACK.zip
 
 Arguments that are not options of this script go to setup.py (for example --skip-media).
 
@@ -28,8 +29,11 @@ Prerequisites only, no setup.py.
 Use the downloaded installers even when winget is there.
 .PARAMETER Yes
 No questions.
+.PARAMETER PupZip
+The PuP Pack from a zip (a file or an https URL), as its author publishes it, instead of the pup_pack
+submodule: no access to that repository needed. Same as $env:TRON_PUP_ZIP; setup.py extracts it.
 #>
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$DryRun,
     [switch]$Monitor,
@@ -38,11 +42,12 @@ param(
     [switch]$NoSetup,
     [switch]$NoWinget,
     [switch]$Yes,
+    [string]$PupZip,
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$SetupArgs
 )
 
 $ErrorActionPreference = 'Stop'
-# Run from a clone, it sets up that clone. Run on its own (irm ... | iex, README "Install"), it first clones the
+# Run from a clone, it sets up that clone. Run on its own (& ([scriptblock]::Create((irm ...) -join [char]10)), README "Install"), it first clones the
 # repository into $env:TRON_DIR (default ~\Tron-Legacy-MPF-Private, outside OneDrive), branch $env:TRON_BRANCH (default
 # main), from $env:TRON_REPO; an existing clone gets a git pull.
 $Clone = -not ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot '..\setup.py')))
@@ -50,6 +55,16 @@ $Root = if (-not $Clone) { Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
         elseif ($env:TRON_DIR) { $env:TRON_DIR } else { Join-Path $HOME 'Tron-Legacy-MPF-Private' }
 $RepoUrl = if ($env:TRON_REPO) { $env:TRON_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-MPF-Private.git' }
 $RepoBranch = if ($env:TRON_BRANCH) { $env:TRON_BRANCH } else { 'main' }
+# The PuP Pack from a zip (-PupZip or $env:TRON_PUP_ZIP) instead of the pup_pack submodule: setup.py reads
+# $env:TRON_PUP_ZIP; a file is given to it as a full path
+if (-not $PupZip) { $PupZip = $env:TRON_PUP_ZIP }
+if ($PupZip) {
+    if ($PupZip -notmatch '^https?://') {
+        if (-not (Test-Path -LiteralPath $PupZip -PathType Leaf)) { throw "PuP Pack zip not found: $PupZip" }
+        $PupZip = (Resolve-Path -LiteralPath $PupZip).ProviderPath
+    }
+    $env:TRON_PUP_ZIP = $PupZip
+}
 
 # The last Python 3.11 release with Windows installers (later 3.11 releases are source-only security fixes)
 $PyOrgVersion = '3.11.9'
@@ -133,6 +148,8 @@ function Find-Git {
 # for this run only (git's url.insteadOf in the environment, inherited by setup.py), and handed to git's
 # credential helper (Git Credential Manager), so later `git pull`s work too.
 $AssetsUrl = if ($env:TRON_ASSETS_REPO) { $env:TRON_ASSETS_REPO } else { 'https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption.git' }
+# the pup_pack submodule (optional, docs/pup/README.md)
+$PupUrl = if ($env:TRON_PUP_REPO) { $env:TRON_PUP_REPO } else { 'https://github.com/Ashram56/Tron-LE-PuP-Pack.git' }
 
 function Test-RepoAccess([string]$GitExe, [string]$Url, [switch]$Anonymous) {
     # no prompt of any kind: GIT_TERMINAL_PROMPT for git's own, GCM_INTERACTIVE for Git Credential Manager's
@@ -149,6 +166,37 @@ function Test-RepoAccess([string]$GitExe, [string]$Url, [switch]$Anonymous) {
     } finally { Remove-Item Env:GIT_TERMINAL_PROMPT, Env:GCM_INTERACTIVE -ErrorAction SilentlyContinue }
 }
 
+function Clear-UntrackedInUpdate([string]$GitExe) {
+    # Before a pull: files the update adds that are already here, untracked, would stop 'git pull' ("untracked
+    # working tree files would be overwritten"). Godot writes a .uid next to every script it opens, so a new
+    # script's .uid is often on disk before the commit that adds it. Remove those, and any copy identical to the
+    # update's; move anything else aside as <file>.local so nothing of the player's is lost.
+    $ErrorActionPreference = 'Continue'     # stderr is not an error here (see Test-RepoAccess)
+    $up = (& $GitExe -C $Root rev-parse -q --verify '@{u}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $up) { return }
+    $added = @(& $GitExe -C $Root -c core.quotepath=off diff --name-only --no-renames --diff-filter=A HEAD $up --)
+    foreach ($f in $added) {
+        if (-not $f) { continue }
+        $path = Join-Path $Root $f
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        & $GitExe -C $Root ls-files --error-unmatch -- $f *> $null
+        if ($LASTEXITCODE -eq 0) { continue }
+        $generated = $f -match '\.(uid|import)$'
+        $same = $false
+        if (-not $generated -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+            $same = ((& $GitExe -C $Root hash-object -- $f) -eq (& $GitExe -C $Root rev-parse "${up}:$f"))
+        }
+        if ($generated -or $same) {
+            Write-Host "    `$ Remove-Item $path"
+            if (-not $DryRun) { Remove-Item -LiteralPath $path -Force }
+        } else {
+            Write-Note "kept your copy of $f as $f.local (the update adds its own)"
+            Write-Host "    `$ Move-Item $path $path.local"
+            if (-not $DryRun) { Move-Item -LiteralPath $path -Destination "$path.local" -Force }
+        }
+    }
+}
+
 function Invoke-GitHubAuth([string]$GitExe) {
     Write-Step 'GitHub access'
     $token = @($env:TRON_GITHUB_TOKEN, $env:GITHUB_TOKEN, $env:GH_TOKEN) | Where-Object { $_ } | Select-Object -First 1
@@ -159,6 +207,14 @@ function Invoke-GitHubAuth([string]$GitExe) {
     # only the repositories nobody can read without a login need the token: a token that cannot read a public
     # repository (a fine-grained one for other repositories, an expired one) would make git fail on it
     $private = @(@($RepoUrl, $AssetsUrl) | Where-Object { -not (Test-RepoAccess $GitExe $_ -Anonymous) })
+    # the PuP Pack (optional): a zip replaces the pup_pack submodule; its private repository needs a token given
+    # up front or credentials git already has, else the game installs without the pack (no prompt for it)
+    if (-not $PupZip -and -not (Test-RepoAccess $GitExe $PupUrl -Anonymous)) {
+        if ($token) { $private += $PupUrl }
+        elseif (-not (Test-RepoAccess $GitExe $PupUrl)) {
+            Write-Note "PuP Pack: $PupUrl is private; installing without it (-PupZip PACK.zip adds it, docs/pup/README.md)"
+        }
+    }
     if ($private.Count -eq 0) {
         Write-Note 'the repositories are public: no token needed'
         return
@@ -233,6 +289,12 @@ try {
         if (-not $DryRun -and -not (Find-Git)) { throw 'Git is still missing after the install' }
     }
     $authGit = Find-Git
+    # setup.py runs `git` from the PATH (to fetch the submodules): a Git found only at its install folder is
+    # put on this session's PATH
+    if ($authGit -and -not (Get-Command git -ErrorAction SilentlyContinue)) {
+        $env:Path = (Split-Path -Parent $authGit) + ';' + $env:Path
+        Write-Note "Git added to this session's PATH: $(Split-Path -Parent $authGit)"
+    }
     Invoke-GitHubAuth $(if ($authGit) { $authGit } else { 'git' })
 
     # ---------------------------------------------------------------- Python 3.11
@@ -351,7 +413,11 @@ try {
                 $onRemote = ($LASTEXITCODE -eq 0)
                 $ErrorActionPreference = 'Stop'
             }
-            if ($onRemote) { Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only') }
+            if ($onRemote) {
+                Invoke-Step $gitExe @('-C', $Root, 'fetch', 'origin')
+                Clear-UntrackedInUpdate $gitExe
+                Invoke-Step $gitExe @('-C', $Root, 'pull', '--ff-only')
+            }
             else {
                 Write-Note "branch '$(if ($cur) { $cur } else { 'none' })' is no longer on GitHub: switching to $RepoBranch"
                 Invoke-Step $gitExe @('-C', $Root, 'fetch', '--prune', 'origin')

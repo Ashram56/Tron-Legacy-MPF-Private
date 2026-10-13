@@ -1,0 +1,108 @@
+#config_version=6
+
+# Hardware overlay for Visual Pinball X: the VPW "Tron Legacy (Stern 2011)" table plays the ball, MPF runs the
+# game in place of PinMAME, Godot draws the DMD and plays the sound. Picked at launch on top of config.yaml:
+#   cd game && ../.venv/bin/mpf game . -c config,hw_vpx   (or: python scripts/run.py --hw vpx)
+# The table talks to MPF through the "TronMPF.Controller" COM object (scripts/vpx_bridge.py, Windows), which
+# stands in for VPinMAME.Controller and speaks MPF's virtual_pinball BCP commands on port 5051. MPF waits at
+# start-up until the table connects. docs/vpx.md has the set-up and the full device map.
+#
+# Numbers: the table uses PinMAME's numbering for Stern SAM, which is the ROM's own numbering for the matrix
+# switches (1-64), coils/flashers (1-32) and lamps (1-80), the numbers config.yaml already uses. Only the SAM
+# dedicated switches differ (PinMAME's sam.vbs: swLLFlip 84, swLRFlip 82, swTilt -7, swSlamTilt -6, swCoin1 65,
+# coin door buttons -3..0); they are renumbered below. tron/vpx_hardware.py adds what the platform lacks:
+# solenoid values and lamp numbers as VPinMAME reports them, PinMAME's ramp RGB lamps 101-106, the
+# flipper "game on" output 33 the table's fast flips listen to, and tolerance for switches MPF does not know.
+
+# The VPW table is the LE (cGameName trn_174h: drop targets, Recognizer motor, ramp light tubes), so this overlay is
+# the LE; hw_vpx_pro.yaml puts the Pro's numbers on it (for a Pro table).
+config:
+  - machine_le.yaml
+
+hardware:
+  platform: virtual_pinball, virtual    # virtual: the LE devices a Pro does not have (machine_pro.yaml)
+
+custom_code: tron.os_layer.TronOS, tron.vpx_hardware.VpxHardware
+
+switches:
+  s_left_flipper:       # sam.vbs swLLFlip (left flipper key)
+    number: 84
+  s_right_flipper:      # sam.vbs swLRFlip (right flipper key)
+    number: 82
+  s_plumb_bob_tilt:     # sam.vbs swTilt; the table's vpmNudge.TiltSwitch
+    number: -7
+  s_slam_tilt:          # sam.vbs swSlamTilt (keySlamDoorHit)
+    number: -6
+  s_coin:               # sam.vbs swCoin1 (keyInsertCoin1, key 5). Coins 2 and 3 (66, 67) are not wired, as on
+    number: 65          # the configs for the real machine; the adapter ignores them.
+  s_service_back:       # sam.vbs swCancel (keyCancel, key 7)
+    number: -3
+  s_service_minus:      # swDown (keyDown, key 8)
+    number: -2
+  s_service_plus:       # swUp (keyUp, key 9)
+    number: -1
+  s_service_select:     # swEnter (keyEnter, key 0)
+    number: 0
+  s_coin_door_open:     # PinMAME toggles the door with its End key; sam.vbs has no switch for it, so the table
+    number: -4          # script that scripts/vpx_table.py writes toggles -4 (DED #20, as on the P-ROC) with End
+  s_disc_opto:          # the table closes 41 while the ball is on the disc (sw41_Hit = 1), like every other
+    type: NO            # switch, so here it is not inverted (rom/switches.yaml: NC, unverified on hardware)
+
+coils:
+  # PinMAME's SAM solenoid 33 is the table's "flippers enabled" input (sam.vbs vpmFFlipsSAM, SolCallback(33));
+  # tron/vpx_hardware.py drives it, so the ticket outputs on the aux bus move out of its way.
+  c_aux_1_ticket_advance:
+    number: aux1
+  c_aux_2_ticket_meter:
+    number: aux2
+  c_aux_3_ticket_enable:
+    number: aux3
+  # Flipper rules need a hold; the table moves the flippers, so these are the SAM CPU's values (hw_proc.yaml)
+  # for the record: 40 ms full power, then 1 ms on every 12 ms.
+  c_left_flipper:
+    default_pulse_ms: 40
+    default_hold_power: 0.083
+  c_right_flipper:
+    default_pulse_ms: 40
+    default_hold_power: 0.083
+  c_upper_left_flipper:
+    default_pulse_ms: 40
+    default_hold_power: 0.083
+
+lights:
+  # PinMAME numbers the ramp tubes' colour bits as lamps (src/wpc/sam.c, SAM_GAME_TRON): strobe 0x10 is lamps
+  # 101-103 and strobe 0x20 is lamps 104-106, each blue, green, red. tron/vpx_hardware.py reports these six
+  # as 0-255, the RGB() values the table builds the tube colours from.
+  l_left_ramp_tube:
+    number: ""
+    channels:
+      blue: {number: "101"}
+      green: {number: "102"}
+      red: {number: "103"}
+  l_right_ramp_tube:
+    number: ""
+    channels:
+      blue: {number: "104"}
+      green: {number: "105"}
+      red: {number: "106"}
+
+# The table's own scripts move the flippers (the fast flips the table already uses with PinMAME): while MPF has
+# flipper rules on, solenoid 33 is on and the flipper keys flip at once; MPF turns them off at tilt, ball end,
+# game over and in the service menu (tron/os_layer.py and the events below, as hw_proc.yaml). VPX sends no EOS
+# switches. Slingshots and pop bumpers kick inside the table, so no autofire_coils.
+flippers:
+  left_flipper:
+    main_coil: c_left_flipper
+    activation_switch: s_left_flipper
+    disable_events: ball_will_end, game_ending, game_ended, service_mode_entered, tron_service_entered
+  right_flipper:
+    main_coil: c_right_flipper
+    activation_switch: s_right_flipper
+    disable_events: ball_will_end, game_ending, game_ended, service_mode_entered, tron_service_entered
+  upper_left_flipper:
+    main_coil: c_upper_left_flipper
+    activation_switch: s_left_flipper
+    disable_events: ball_will_end, game_ending, game_ended, service_mode_entered, tron_service_entered
+
+# The table plays the ball: VPX moves it, so MPF's ball devices count it from the table's trough, shooter lane
+# and VUK switches (bsTrough starts with 4 balls, as machine: balls_installed).

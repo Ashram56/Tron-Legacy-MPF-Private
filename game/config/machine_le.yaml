@@ -1,0 +1,14 @@
+#config_version=6
+
+# Tron Legacy LE: the asset package's numbers (config.yaml) are the LE's, so this only sets the machine variables.
+# Included by the LE overlays (hw_proc_le, hw_virtual_le, hw_vpx). docs/hardware.md, "Pro or LE".
+
+machine_vars:
+  machine_variant:
+    initial_value: le
+    value_type: str
+    persist: false
+  fiber_optics:                # the ramp light tubes (aux bus): fitted on every LE
+    initial_value: 1
+    value_type: int
+    persist: false

@@ -6,14 +6,17 @@ config_version=5
 
 config/name="Tron Legacy MPF"
 run/main_scene="res://slides/window.tscn"
-config/features=PackedStringArray("4.5", "Mobile")
+config/features=PackedStringArray("4.6", "Mobile")
 
 [autoload]
 
 DmdMode="*res://tools/dmd_mode.gd"
+DmdScreen="*res://tron/dmd_screen.gd"
 MPF="*res://addons/mpf-gmc/mpf_gmc.gd"
 DmdCapture="*res://tools/dmd_capture.gd"
 ProcDmd="*res://tools/proc_dmd.gd"
+Pup="*res://pup/pup_player.gd"
+PerfProbe="*res://tools/perf_probe.gd"
 
 [display]
 
@@ -29,7 +32,14 @@ window/stretch/scale_mode="integer"
 dmd/mode="hd"
 dmd/dots=0
 dmd/tint="blue"
-dmd/text_glow=0.0
+dmd/text_glow=0.8
+dmd/font="rajdhani"
+dmd/text_scale=0.85
+dmd/preload_min_frames=40
+dmd/preload_small=true
+dmd/pool_slides=true
+dmd/renderer="data"
+dmd/color="on"
 
 [editor_plugins]
 
@@ -37,5 +47,11 @@ enabled=PackedStringArray("res://addons/mpf-gmc/plugin.cfg")
 
 [rendering]
 
+rendering_device/pipeline_cache/save_chunk_size_mb=0.1
 renderer/rendering_method="mobile"
+driver/threads/thread_model=2
 textures/canvas_textures/default_texture_filter=0
+
+[threading]
+
+worker_pool/low_priority_thread_ratio=0.5

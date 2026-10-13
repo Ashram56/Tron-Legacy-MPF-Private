@@ -32,7 +32,10 @@ VUK_HIT = 0.05                      # tron_ref closes sw11 for 50 ms (whatever m
 # drift: clu_hurryup's 51 waits stay on time).
 STEP_OVERSHOOT = 0.00655
 BUTTONS = {"left": "s_left_flipper", "right": "s_right_flipper", "tilt": "s_plumb_bob_tilt",
-           "start": "s_start_button", "tournament": "s_tournament_start"}
+           "start": "s_start_button", "tournament": "s_tournament_start",
+           # the coin door (states_ref's `button` names; coindoor -1 opens the door, 0 closes it)
+           "back": "s_service_back", "minus": "s_service_minus", "plus": "s_service_plus",
+           "select": "s_service_select", "slam": "s_slam_tilt", "coindoor": "s_coin_door_open", "coin": "s_coin"}
 
 
 def switch_name(num):

@@ -1,0 +1,10 @@
+config_version=5
+
+[application]
+
+config/name="separate_thread_glyph_cache"
+run/main_scene="res://main.tscn"
+
+[rendering]
+
+driver/threads/thread_model=2

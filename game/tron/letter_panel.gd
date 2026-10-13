@@ -21,11 +21,14 @@ extends Node
 const GLOW_DOTS := 4            # glow margin around a letter, in dots
 const GLOW_PX := 2              # glow texture pixels per dot (it is soft: filtering enlarges it cleanly)
 
-static var _glow_textures: Dictionary = {}
+static var _glow_textures: Dictionary = {}   # letter picture -> its glow (an Image from the worker, then a texture)
+static var _glow_tasks: Dictionary = {}      # letter picture -> WorkerThreadPool task making its glow, until waited for
+static var _glow_lock := Mutex.new()
 
 var _elapsed_ms := 0.0
 var _seeked := false
 var _values := {}
+var _glow_waiting: Array = []   # [sprite, glow colour] until the picture's glow is made
 
 
 func _ready() -> void:
@@ -50,23 +53,114 @@ func _style_hd() -> void:
 			var level: float = sprite.get_meta("dmd_classic_tint", sprite.modulate).r   # orange times the palette level
 			sprite.modulate = Color(1, 1, 1, 1)
 			sprite.self_modulate = dmd.text_tint(Color(level, 0, 0, 1))
-			var tex := glow_texture(sprite.texture)
-			if tex == null or float(st["glow"]) <= 0.0:
+			if float(st["glow"]) <= 0.0:
 				continue
-			var glow := Sprite2D.new()
-			glow.texture = tex
-			glow.centered = false
-			var per_dot: float = tex.get_width() / float(_dots(sprite).x + 2 * GLOW_DOTS)
-			var dot_px: float = sprite.texture.get_width() / float(_dots(sprite).x)
-			glow.scale = Vector2.ONE * dot_px / per_dot
-			glow.position = -Vector2.ONE * GLOW_DOTS * dot_px
 			var g: Color = st["glow_color"] * (float(st["glow"]) * level)
 			g.a = 1.0
-			glow.self_modulate = g
-			var add := CanvasItemMaterial.new()
-			add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
-			glow.material = add
-			sprite.add_child(glow, false, INTERNAL_MODE_BACK)
+			start_glow(sprite.texture)
+			_glow_waiting.append([sprite, g])
+	_add_glows(false)
+
+
+## Adds the glow sprites whose glow is made (all of them, waiting for the worker threads, when wait).
+func _add_glows(wait: bool) -> void:
+	var still: Array = []
+	for w in _glow_waiting:
+		var sprite := w[0] as Sprite2D
+		if not is_instance_valid(sprite):
+			continue
+		_glow_lock.lock()
+		var made := _glow_textures.has(sprite.texture)
+		_glow_lock.unlock()
+		if not made and not wait:
+			still.append(w)
+			continue
+		var tex := _glow_of(sprite.texture)
+		if tex == null:
+			continue
+		var glow := Sprite2D.new()
+		glow.texture = tex
+		glow.centered = false
+		var per_dot: float = tex.get_width() / float(_dots(sprite).x + 2 * GLOW_DOTS)
+		var dot_px: float = sprite.texture.get_width() / float(_dots(sprite).x)
+		glow.scale = Vector2.ONE * dot_px / per_dot
+		glow.position = -Vector2.ONE * GLOW_DOTS * dot_px
+		glow.self_modulate = w[1]
+		var add := CanvasItemMaterial.new()
+		add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+		glow.material = add
+		sprite.add_child(glow, false, INTERNAL_MODE_BACK)
+	_glow_waiting = still
+
+
+## Makes a letter picture's glow on a worker thread, once: made on Godot's main thread, the 8 glows of a slide
+## held it up to 0.4 s (reading the pictures back and blurring them in script). tools/dmd_mode.gd starts every
+## letter picture's glow at start-up; a slide shown before its glows are made adds them when they are. The worker
+## reads the picture's file: reading a texture back from a worker thread broke Godot's separate render thread ("open
+## draw list"), so an exported game without the files reads it back here, on the main thread.
+static func start_glow(tex: Texture2D) -> void:
+	_glow_lock.lock()
+	var started := _glow_textures.has(tex) or _glow_tasks.has(tex)
+	_glow_lock.unlock()
+	if started:
+		return
+	var scale := 8.0
+	var dmd = (Engine.get_main_loop() as SceneTree).root.get_node_or_null("DmdMode")
+	if dmd:
+		scale = float(dmd.frame_scale)
+	var path := tex.resource_path
+	var img: Image = null
+	if path == "" or not FileAccess.file_exists(path):
+		img = tex.get_image()
+		path = ""
+	else:
+		path = ProjectSettings.globalize_path(path)   # a res:// picture would be loaded with an export warning
+	_glow_lock.lock()
+	_glow_tasks[tex] = WorkerThreadPool.add_task(func():
+		var glow := _make_glow(Image.load_from_file(path) if path != "" else img, scale)
+		_glow_lock.lock()
+		_glow_textures[tex] = glow
+		_glow_lock.unlock(), true, "letter glow")
+	_glow_lock.unlock()
+
+
+## A letter picture's glow (null: none), waiting for its worker if it is still being made. Main thread only: the
+## first call makes its texture.
+static func _glow_of(tex: Texture2D) -> Texture2D:
+	_glow_lock.lock()
+	var task: int = _glow_tasks.get(tex, -1)
+	_glow_tasks.erase(tex)
+	_glow_lock.unlock()
+	if task >= 0:
+		WorkerThreadPool.wait_for_task_completion(task)   # once per task (Godot's rule); at once when it is done
+	_glow_lock.lock()
+	var glow = _glow_textures.get(tex)
+	if glow is Image:
+		glow = ImageTexture.create_from_image(glow)
+		_glow_textures[tex] = glow
+	_glow_lock.unlock()
+	return glow
+
+
+## Drops every glow made (at exit: textures kept in static variables would be freed after the renderer).
+static func clear_glows() -> void:
+	_glow_lock.lock()
+	var tasks := _glow_tasks.values()
+	_glow_tasks.clear()
+	_glow_lock.unlock()
+	for t in tasks:
+		WorkerThreadPool.wait_for_task_completion(t)
+	_glow_lock.lock()
+	_glow_textures.clear()
+	_glow_lock.unlock()
+
+
+## A letter picture's glow when it is made, else null (never waits: tron/dmd_effect.gd asks at every change).
+static func made_glow(tex: Texture2D) -> Texture2D:
+	_glow_lock.lock()
+	var made := _glow_textures.has(tex)
+	_glow_lock.unlock()
+	return _glow_of(tex) if made else null
 
 
 ## The letter's size in dots (its picture's size times the sprite's scale).
@@ -76,18 +170,17 @@ static func _dots(sprite: Sprite2D) -> Vector2i:
 
 ## A blurred copy of a letter's lit dots (white, the glow as alpha) with GLOW_DOTS of margin, GLOW_PX per dot.
 static func glow_texture(tex: Texture2D) -> Texture2D:
-	if _glow_textures.has(tex):
-		return _glow_textures[tex]
-	var img := tex.get_image()
-	if img == null:
+	start_glow(tex)
+	return _glow_of(tex)
+
+
+static func _make_glow(img: Image, scale: float) -> Image:
+	if img == null or img.is_empty():
 		return null
 	if img.is_compressed():
 		img.decompress()
 	img.convert(Image.FORMAT_RGBA8)
-	var src_dots := Vector2i(roundi(img.get_width() / 8.0), roundi(img.get_height() / 8.0))
-	var dmd = (Engine.get_main_loop() as SceneTree).root.get_node_or_null("DmdMode")
-	if dmd:
-		src_dots = Vector2i(roundi(img.get_width() / float(dmd.frame_scale)), roundi(img.get_height() / float(dmd.frame_scale)))
+	var src_dots := Vector2i(roundi(img.get_width() / scale), roundi(img.get_height() / scale))
 	img.resize(src_dots.x * GLOW_PX, src_dots.y * GLOW_PX, Image.INTERPOLATE_LANCZOS)
 	var w := (src_dots.x + 2 * GLOW_DOTS) * GLOW_PX
 	var h := (src_dots.y + 2 * GLOW_DOTS) * GLOW_PX
@@ -107,9 +200,7 @@ static func glow_texture(tex: Texture2D) -> Texture2D:
 		for x in w:                          # around the strokes only: the letter keeps its own colour
 			var i := y * w + x
 			out.set_pixel(x, y, Color(1, 1, 1, clampf(a[i] * 1.8 * (1.0 - clampf(lit[i], 0.0, 1.0)), 0.0, 1.0)))
-	var glow := ImageTexture.create_from_image(out)
-	_glow_textures[tex] = glow
-	return glow
+	return out
 
 
 static func _box(a: PackedFloat32Array, w: int, h: int, r: int, horizontal: bool) -> PackedFloat32Array:
@@ -146,13 +237,24 @@ func update(_settings: Dictionary, kwargs: Dictionary = {}) -> void:
 	_apply()
 
 
+## Back to time 0 with no values (tron/dmd_slide.gd reuses slides).
+func pool_reset() -> void:
+	_elapsed_ms = 0.0
+	_seeked = false
+	_values = {}
+	_apply()
+
+
 func seek_ms(t: float) -> void:
 	_seeked = true
+	_add_glows(true)   # a render (scripts/render_diff.py) shows every glow from the first frame
 	_elapsed_ms = t
 	_apply()
 
 
 func _process(delta: float) -> void:
+	if not _glow_waiting.is_empty():
+		_add_glows(false)
 	if not _seeked:
 		_elapsed_ms += delta * 1000.0
 		_apply()

@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://addons/mpf-gmc/classes/mpf_slide.gd" id="slide"]
+[ext_resource type="Script" path="res://tron/dmd_slide.gd" id="slide"]
 [ext_resource type="Script" path="res://tron/rom_text.gd" id="text"]
 
 [node name="text_page" type="Control"]

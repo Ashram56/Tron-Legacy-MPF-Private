@@ -1,0 +1,11 @@
+config_version=5
+
+[application]
+
+config/name="pipeline_cache_separate_thread"
+run/main_scene="res://main.tscn"
+
+[rendering]
+
+renderer/rendering_method="mobile"
+driver/threads/thread_model=2

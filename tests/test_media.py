@@ -146,6 +146,25 @@ class TestBridge(TronTestCase):
         for key in ("bar_ds", "bar_bumpers", "bar_spinners", "bar_zfs", "bar_clu", "bar_gem"):
             self.assertEqual(0, args[key])
 
+    def test_hurryup_bar_gone_when_ended_early(self):
+        # clu_end_show_total zeroes the bar (FUN_01023010(0)): CLU made with 9 s left showed a 3-dot bar on the
+        # panel's separator for the rest of the game (seen in Portal Multiball, Xavier NX full game 2026-10-12)
+        bridge = self.tron.media
+        if not bridge.data:
+            self.skipTest("media data not generated (scripts/gen_media.py)")
+        self.fill_trough()
+        self.hit_and_release_switch("s_start_button")
+        self.advance_time_and_run(2)
+        clock = self.tron.features_by_name["clu"].clock
+        clock.start()
+        clock.seconds = 25
+        self.assertEqual(10, bridge.score_display_args()["bar_clu"])
+        clock.seconds = 9
+        self.assertEqual(3, bridge.score_display_args()["bar_clu"])
+        clock.kill()                                    # clu_end_now: all shots made, 9 s left
+        self.assertEqual(9, clock.seconds)
+        self.assertEqual(0, bridge.score_display_args()["bar_clu"])
+
     def test_missing_value_is_blank(self):
         bridge = self.tron.media
         if not bridge.data:

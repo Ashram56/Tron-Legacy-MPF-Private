@@ -1,0 +1,68 @@
+name: native_video macOS build
+
+# Builds the native_video add-on's macOS dylibs (godot-native-video v0.3.1 + the gdzig heap fix in
+# pup_addons/native_video_build/heap.zig) and commits them to pup_addons/native_video/ on the branch it ran on.
+# Runs by hand only (Actions tab, on the branch to update): CI never runs on its own off main.
+on:
+  workflow_dispatch:
+
+env:
+  NATIVE_VIDEO_REPO: https://github.com/claytercek/godot-native-video.git
+  NATIVE_VIDEO_REV: 6d51d93b3878777e2d7981875ce9d8684869f934   # v0.3.1, as the Windows DLLs
+  GDZIG_REV: 14458fb                                            # the gdzig commit heap.zig replaces a file of
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch godot-native-video v0.3.1 and apply the heap fix
+        run: |
+          git clone --quiet "$NATIVE_VIDEO_REPO" nv
+          git -C nv checkout --quiet "$NATIVE_VIDEO_REV"
+          git -C nv submodule update --init --recursive --quiet
+          test "$(git -C nv/vendor/gdzig rev-parse --short=7 HEAD)" = "$GDZIG_REV"
+          cp pup_addons/native_video_build/heap.zig nv/vendor/gdzig/src/heap.zig
+          git -C nv/vendor/gdzig diff --stat
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      # Same targets and optimize modes as upstream's release build (debug = ReleaseSafe), then one
+      # universal (arm64 + x86_64) dylib per mode.
+      - name: Build
+        working-directory: nv
+        run: |
+          mkdir -p staging
+          for arch in aarch64 x86_64; do
+            for mode in debug:ReleaseSafe release:ReleaseFast; do
+              zig build -Dtarget=$arch-macos -Doptimize=${mode#*:} --summary failures
+              cp project/lib/libnative_video.dylib staging/$arch.${mode%%:*}.dylib
+            done
+          done
+          for mode in debug release; do
+            lipo -create staging/aarch64.$mode.dylib staging/x86_64.$mode.dylib \
+              -output staging/libnative_video.macos.$mode.dylib
+            lipo -info staging/libnative_video.macos.$mode.dylib
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-video-macos
+          path: nv/staging/libnative_video.macos.*.dylib
+          if-no-files-found: error
+
+      - name: Commit the dylibs
+        if: github.ref != 'refs/heads/main'
+        run: |
+          cp nv/staging/libnative_video.macos.*.dylib pup_addons/native_video/
+          git add pup_addons/native_video/libnative_video.macos.*.dylib
+          if git diff --cached --quiet; then echo "dylibs unchanged"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "native_video: macOS dylibs rebuilt with the gdzig heap fix (workflow run $GITHUB_RUN_ID)"
+          git push origin "HEAD:$GITHUB_REF_NAME"
